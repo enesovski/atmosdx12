@@ -7,6 +7,8 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "Application.h"
+
 using Microsoft::WRL::ComPtr;
 
 void CheckHRESULT(HRESULT result, const char* message)
@@ -53,7 +55,10 @@ int main()
         adapter->GetDesc1(&desc);
         std::wcout << L"Selected GPU: " << desc.Description << L'\n';
         std::cout << "Direct3D 12 device initialized successfully.\n";
-        return 0;
+
+        Application app(GetModuleHandleW(nullptr), 1280, 720);
+        return app.Run();        
+
     }
     catch (const std::exception& e)
     {
