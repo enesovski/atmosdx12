@@ -1,5 +1,6 @@
 
 #include "Application.h"
+#include "graphics/D3D12Renderer.h"
 
 #include <stdexcept>
 
@@ -21,14 +22,17 @@ Application::Application(HINSTANCE instance, int width, int height)
     if (!RegisterClassExW(&windowClass))
         throw std::runtime_error("Failed to register window class");
 
+    // No resizing for this milestone; swapchain resizing will be added later.
+    constexpr DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+
     RECT rect{ 0, 0, width, height };
-    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+    AdjustWindowRect(&rect, style, FALSE);
 
     window_ = CreateWindowExW(
         0,
         WindowClassName,
         L"AtmosDX12",
-        WS_OVERLAPPEDWINDOW,
+        style,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
         rect.right - rect.left,
@@ -56,29 +60,32 @@ Application::~Application()
     UnregisterClassW(WindowClassName, instance_);
 }
 
-int Application::Run()
+int Application::Run(D3D12Renderer& renderer)
 {
     MSG message{};
 
     while (true)
     {
-        BOOL result = GetMessageW(&message, nullptr, 0, 0);
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
+        {
+            if (message.message == WM_QUIT)
+                return static_cast<int>(message.wParam);
 
-        if (result == -1)
-            throw std::runtime_error("Failed to retrieve window message");
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
 
-        if (result == 0)
-            break;
+        if (IsIconic(window_))
+        {
+            WaitMessage();
+            continue;
+        }
 
-        TranslateMessage(&message);
-        DispatchMessageW(&message);
+        renderer.Render();
     }
-
-    return static_cast<int>(message.wParam);
 }
 
-LRESULT CALLBACK Application::WindowProc(
-    HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK Application::WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {

@@ -4,22 +4,24 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+class D3D12Renderer;
+
 class Application
 {
-    public:
-        Application(HINSTANCE instance, int width, int height);
-        ~Application();
+public:
+    Application(HINSTANCE instance, int width, int height);
+    ~Application();
 
-        Application(const Application&) = delete;
-        Application& operator=(const Application&) = delete;
+    Application(const Application&) = delete;
+    Application& operator=(const Application&) = delete;
 
-        int Run();
+    int Run(D3D12Renderer& renderer);
 
-        HWND GetWindowHandle() const { return window_; }
+    HWND GetWindowHandle() const { return window_; }
 
-    private:
-        static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+private:
+    static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-        HINSTANCE instance_;
-        HWND window_ = nullptr;
+    HINSTANCE instance_;
+    HWND window_ = nullptr;
 };

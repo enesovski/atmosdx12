@@ -10,6 +10,8 @@ add_executable(AtmosDX12
     src/main.cpp
     src/Application.cpp
     src/Application.h
+    src/graphics/D3D12Renderer.cpp
+    src/graphics/D3D12Renderer.h
 )
 
 target_link_libraries(AtmosDX12 PRIVATE
