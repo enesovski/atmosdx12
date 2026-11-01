@@ -12,6 +12,10 @@ add_executable(AtmosDX12
     src/Application.h
     src/graphics/D3D12Renderer.cpp
     src/graphics/D3D12Renderer.h
+    src/graphics/GraphicsPipeline.cpp
+    src/graphics/GraphicsPipeline.h
+    src/graphics/passes/SkyPass.cpp
+    src/graphics/passes/SkyPass.h
 )
 
 target_link_libraries(AtmosDX12 PRIVATE

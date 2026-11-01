@@ -8,6 +8,9 @@
 #include <dxgi1_6.h>
 
 #include <cstdint>
+#include <memory>
+
+class SkyPass;
 
 class D3D12Renderer
 {
@@ -26,7 +29,6 @@ private:
     void CreateCommandObjects();
     void CreateSwapChain(HWND window, IDXGIFactory6* factory, int width, int height);
     void CreateRenderTargets();
-    void CreatePipeline();
     void WaitForGPU();
 
     Microsoft::WRL::ComPtr<ID3D12Device> device_;
@@ -38,8 +40,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList_;
     Microsoft::WRL::ComPtr<ID3D12Fence> fence_;
 
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
+    std::unique_ptr<SkyPass> skyPass_;
 
     D3D12_VIEWPORT viewport_{};
     D3D12_RECT scissorRect_{};
