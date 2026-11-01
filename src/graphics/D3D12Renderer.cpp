@@ -178,7 +178,7 @@ void D3D12Renderer::CreateRenderTargets()
     }
 }
 
-void D3D12Renderer::Render()
+void D3D12Renderer::Render(const Camera& camera)
 {
     const float elapsedSeconds = clock_.GetElapsedSeconds();
     const UINT frameIndex = swapChain_->GetCurrentBackBufferIndex();
@@ -213,7 +213,7 @@ void D3D12Renderer::Render()
     commandList_->RSSetScissorRects(1, &scissorRect_);
     commandList_->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
 
-    skyPass_->Render(commandList_.Get(), elapsedSeconds);
+    skyPass_->Render(commandList_.Get(), camera, elapsedSeconds);
 
     // Make the completed back buffer available for presentation.
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;

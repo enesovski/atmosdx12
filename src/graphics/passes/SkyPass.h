@@ -1,14 +1,16 @@
 
 #pragma once
 
-#include "../GraphicsPipeline.h"
-
 #include <d3d12.h>
+#include <DirectXMath.h>
 #include <wrl/client.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <cstdint>
+
+class Camera;
+class GraphicsPipeline;
 
 class SkyPass
 {
@@ -18,23 +20,24 @@ public:
 
     ~SkyPass();
 
-    void Render(ID3D12GraphicsCommandList* commandList, float elapsedSeconds);
+    void Render(ID3D12GraphicsCommandList* commandList, const Camera& camera, float elapsedSeconds);
 
 private:
     struct SkyConstants
     {
-        float time = 0.0f;
-        float resolution[2]{};
-        float padding = 0.0f;
+        DirectX::XMFLOAT4 cameraRight;
+        DirectX::XMFLOAT4 cameraUp;
+        DirectX::XMFLOAT4 cameraForward;
+        DirectX::XMFLOAT4 params;
     };
 
-    static_assert(sizeof(SkyConstants) == 16);
+    static_assert(sizeof(SkyConstants) == 64);
 
     void CreatePipeline(ID3D12Device* device, const std::filesystem::path& shaderPath,
                         DXGI_FORMAT renderTargetFormat);
 
     void CreateConstantBuffer(ID3D12Device* device);
-    void UpdateConstants(float elapsedSeconds);
+    void UpdateConstants(const Camera& camera, float elapsedSeconds);
 
     std::unique_ptr<GraphicsPipeline> pipeline_;
 

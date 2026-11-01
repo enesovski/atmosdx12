@@ -8,15 +8,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(AtmosDX12
     src/main.cpp
-    src/Application.cpp
     src/Application.h
-    src/graphics/D3D12Renderer.cpp
-    src/graphics/D3D12Renderer.h
-    src/graphics/GraphicsPipeline.cpp
-    src/graphics/GraphicsPipeline.h
-    src/graphics/passes/SkyPass.cpp
-    src/graphics/passes/SkyPass.h
+    src/Application.cpp
+
     src/core/FrameClock.h
+
+    src/input/Input.h
+
+    src/scene/Camera.h
+    src/scene/Camera.cpp
+
+    src/graphics/D3D12Renderer.h
+    src/graphics/D3D12Renderer.cpp
+    src/graphics/GraphicsPipeline.h
+    src/graphics/GraphicsPipeline.cpp
+
+    src/graphics/passes/SkyPass.h
+    src/graphics/passes/SkyPass.cpp
 )
 
 target_link_libraries(AtmosDX12 PRIVATE

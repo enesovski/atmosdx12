@@ -1,5 +1,7 @@
 
 #include "SkyPass.h"
+#include "../GraphicsPipeline.h"
+#include "../../scene/Camera.h"
 
 #include <array>
 #include <cstring>
@@ -53,12 +55,7 @@ void SkyPass::CreatePipeline(ID3D12Device* device, const std::filesystem::path& 
     };
 
     pipeline_ = std::make_unique<GraphicsPipeline>(
-        device,
-        shaderPath,
-        "VSMain",
-        "PSMain",
-        renderTargetFormat,
-        rootParameters
+        device, shaderPath, "VSMain", "PSMain", renderTargetFormat, rootParameters
     );
 }
 
@@ -90,34 +87,49 @@ void SkyPass::CreateConstantBuffer(ID3D12Device* device)
     void* mapped = nullptr;
 
     Check(constantBuffer_->Map(
-        0,
-        &readRange,
-        &mapped
+        0, &readRange, &mapped
     ), "Failed to map sky constant buffer");
 
     mappedData_ = static_cast<std::uint8_t*>(mapped);
 }
 
-void SkyPass::UpdateConstants(float elapsedSeconds)
+void SkyPass::UpdateConstants(const Camera& camera, float elapsedSeconds)
 {
-    SkyConstants constants{};
-    constants.time = elapsedSeconds;
-    constants.resolution[0] = static_cast<float>(width_);
-    constants.resolution[1] = static_cast<float>(height_);
+    CameraBasis basis = camera.GetBasis();
 
-    // The renderer waits for GPU completion before the next update.
+    SkyConstants constants{};
+
+    constants.cameraRight = {
+        basis.right.x, basis.right.y, basis.right.z, 0.0f
+    };
+
+    constants.cameraUp = {
+        basis.up.x, basis.up.y, basis.up.z, 0.0f
+    };
+
+    constants.cameraForward = {
+        basis.forward.x, basis.forward.y, basis.forward.z, 0.0f
+    };
+
+    constants.params = {
+        elapsedSeconds,
+        static_cast<float>(width_) / static_cast<float>(height_),
+        basis.tanHalfFovY,
+        0.0f
+    };
+
+    // The renderer waits for GPU completion before overwriting this buffer.
     std::memcpy(mappedData_, &constants, sizeof(constants));
 }
 
-void SkyPass::Render(ID3D12GraphicsCommandList* commandList, float elapsedSeconds)
+void SkyPass::Render(ID3D12GraphicsCommandList* commandList, const Camera& camera, float elapsedSeconds)
 {
-    UpdateConstants(elapsedSeconds);
+    UpdateConstants(camera, elapsedSeconds);
 
     pipeline_->Bind(commandList);
 
     commandList->SetGraphicsRootConstantBufferView(
-        0,
-        constantBuffer_->GetGPUVirtualAddress()
+        0, constantBuffer_->GetGPUVirtualAddress()
     );
 
     commandList->IASetPrimitiveTopology(

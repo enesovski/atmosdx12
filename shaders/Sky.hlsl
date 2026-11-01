@@ -3,9 +3,10 @@ static const float PI = 3.14159265359;
 
 cbuffer SkyConstants : register(b0)
 {
-    float time;
-    float2 resolution;
-    float padding;
+    float4 cameraRight;
+    float4 cameraUp;
+    float4 cameraForward;
+    float4 params;
 };
 
 struct VertexOutput
@@ -35,7 +36,23 @@ VertexOutput VSMain(uint vertexID : SV_VertexID)
     return output;
 }
 
-float3 GetSkyColor(float2 uv, float sunHeight)
+float3 GetViewDirection(float2 uv)
+{
+    float2 screen = uv * 2.0 - 1.0;
+    screen.y = -screen.y;
+
+    float aspectRatio = params.y;
+    float tanHalfFovY = params.z;
+
+    float3 direction =
+        cameraForward.xyz +
+        screen.x * aspectRatio * tanHalfFovY * cameraRight.xyz +
+        screen.y * tanHalfFovY * cameraUp.xyz;
+
+    return normalize(direction);
+}
+
+float3 GetSkyColor(float3 viewDirection, float sunHeight)
 {
     float dayFactor = smoothstep(-0.15, 0.30, sunHeight);
 
@@ -45,56 +62,29 @@ float3 GetSkyColor(float2 uv, float sunHeight)
     float3 dayZenith = float3(0.025, 0.12, 0.40);
     float3 dayHorizon = float3(0.50, 0.73, 0.95);
 
-    float3 zenith = lerp(
-        nightZenith,
-        dayZenith,
-        dayFactor
-    );
-
-    float3 horizon = lerp(
-        nightHorizon,
-        dayHorizon,
-        dayFactor
-    );
+    float3 zenith = lerp(nightZenith, dayZenith, dayFactor);
+    float3 horizon = lerp(nightHorizon, dayHorizon, dayFactor);
 
     float sunsetFactor =
-        (1.0 - smoothstep(0.0, 0.45, abs(sunHeight))) *
-        dayFactor;
+        (1.0 - smoothstep(0.0, 0.45, abs(sunHeight))) * dayFactor;
 
     float3 sunsetColor = float3(1.0, 0.36, 0.16);
 
-    horizon = lerp(
-        horizon,
-        sunsetColor,
-        sunsetFactor * 0.85
-    );
+    horizon = lerp(horizon, sunsetColor, sunsetFactor * 0.85);
 
-    float gradient = smoothstep(0.0, 0.85, uv.y);
+    float gradient = smoothstep(-0.12, 0.85, viewDirection.y);
 
-    return lerp(zenith, horizon, gradient);
+    return lerp(horizon, zenith, gradient);
 }
 
-float3 GetSunColor(float2 uv, float2 sunPosition, float sunHeight)
+float3 GetSunColor(float3 viewDirection, float3 sunDirection, float sunHeight)
 {
-    float2 delta = uv - sunPosition;
+    float alignment = dot(viewDirection, sunDirection);
 
-    delta.x *= resolution.x / max(resolution.y, 1.0);
+    float sunDisk = smoothstep(0.9992, 0.9997, alignment);
+    float glow = pow(saturate(alignment), 96.0) * 0.35;
 
-    float distanceToSun = length(delta);
-
-    float sunDisk = 1.0 - smoothstep(
-        0.025,
-        0.030,
-        distanceToSun
-    );
-
-    float glow = exp(-distanceToSun * 12.0) * 0.35;
-
-    float visibility = smoothstep(
-        -0.05,
-        0.08,
-        sunHeight
-    );
+    float visibility = smoothstep(-0.08, 0.10, sunHeight);
 
     float3 sunColor = lerp(
         float3(1.0, 0.45, 0.15),
@@ -109,19 +99,22 @@ float4 PSMain(VertexOutput input) : SV_TARGET
 {
     float2 uv = saturate(input.uv);
 
-    // One complete day takes 90 seconds.
+    float time = params.x;
     float dayDuration = 90.0;
-    float angle = time * (2.0 * PI / dayDuration) + 0.5;
+    float angle = time * (2.0 * PI / dayDuration) + 0.2;
 
-    float sunHeight = sin(angle);
+    // The sun moves in world space, independently of camera rotation.
+    float3 sunDirection = normalize(float3(
+        0.45 * cos(angle),
+        sin(angle),
+        0.8
+    ));
 
-    float2 sunPosition = float2(
-        0.5 + 0.30 * cos(angle),
-        0.70 - 0.42 * sin(angle)
-    );
+    float sunHeight = sunDirection.y;
+    float3 viewDirection = GetViewDirection(uv);
 
-    float3 skyColor = GetSkyColor(uv, sunHeight);
-    float3 sunColor = GetSunColor(uv, sunPosition, sunHeight);
+    float3 skyColor = GetSkyColor(viewDirection, sunHeight);
+    float3 sunColor = GetSunColor(viewDirection, sunDirection, sunHeight);
 
     float3 finalColor = saturate(skyColor + sunColor);
 

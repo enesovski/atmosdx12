@@ -1,4 +1,3 @@
-
 #pragma once
 
 #define WIN32_LEAN_AND_MEAN
@@ -7,10 +6,12 @@
 #include <d3d12.h>
 #include <dxgi1_6.h>
 
+#include "../core/FrameClock.h"
+
 #include <cstdint>
 #include <memory>
 
-#include "../core/FrameClock.h"
+class Camera;
 class SkyPass;
 
 class D3D12Renderer
@@ -22,7 +23,7 @@ public:
     D3D12Renderer(const D3D12Renderer&) = delete;
     D3D12Renderer& operator=(const D3D12Renderer&) = delete;
 
-    void Render();
+    void Render(const Camera& camera);
 
 private:
     static constexpr UINT FrameCount = 2;
@@ -32,7 +33,6 @@ private:
     void CreateRenderTargets();
     void WaitForGPU();
 
-    
     Microsoft::WRL::ComPtr<ID3D12Device> device_;
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue_;
     Microsoft::WRL::ComPtr<IDXGISwapChain3> swapChain_;
