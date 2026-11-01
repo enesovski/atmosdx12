@@ -16,6 +16,7 @@ add_executable(AtmosDX12
     src/graphics/GraphicsPipeline.h
     src/graphics/passes/SkyPass.cpp
     src/graphics/passes/SkyPass.h
+    src/core/FrameClock.h
 )
 
 target_link_libraries(AtmosDX12 PRIVATE

@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "../core/FrameClock.h"
 class SkyPass;
 
 class D3D12Renderer
@@ -31,6 +32,7 @@ private:
     void CreateRenderTargets();
     void WaitForGPU();
 
+    
     Microsoft::WRL::ComPtr<ID3D12Device> device_;
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue_;
     Microsoft::WRL::ComPtr<IDXGISwapChain3> swapChain_;
@@ -41,6 +43,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Fence> fence_;
 
     std::unique_ptr<SkyPass> skyPass_;
+    FrameClock clock_;
 
     D3D12_VIEWPORT viewport_{};
     D3D12_RECT scissorRect_{};

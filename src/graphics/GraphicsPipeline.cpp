@@ -16,11 +16,8 @@ namespace
             throw std::runtime_error(message);
     }
 
-    ComPtr<ID3DBlob> CompileShader(
-        const std::filesystem::path& path,
-        const std::string& entryPoint,
-        const char* target
-    )
+    ComPtr<ID3DBlob> CompileShader(const std::filesystem::path& path,
+                                  const std::string& entryPoint, const char* target)
     {
         ComPtr<ID3DBlob> shader;
         ComPtr<ID3DBlob> errors;
@@ -45,18 +42,15 @@ namespace
 
         if (FAILED(result))
         {
-            std::string message = "Failed to compile shader: ";
+            std::string message = "Failed to compile shader: " + path.string();
 
             if (errors)
             {
+                message += "\n";
                 message.append(
                     static_cast<const char*>(errors->GetBufferPointer()),
                     errors->GetBufferSize()
                 );
-            }
-            else
-            {
-                message += path.string();
             }
 
             throw std::runtime_error(message);
@@ -66,24 +60,18 @@ namespace
     }
 }
 
-GraphicsPipeline::GraphicsPipeline(
-    ID3D12Device* device,
-    const std::filesystem::path& shaderPath,
-    const std::string& vertexEntry,
-    const std::string& pixelEntry,
-    DXGI_FORMAT renderTargetFormat
-)
+GraphicsPipeline::GraphicsPipeline(ID3D12Device* device, const std::filesystem::path& shaderPath,
+                                   const std::string& vertexEntry, const std::string& pixelEntry,
+                                   DXGI_FORMAT renderTargetFormat,
+                                   std::span<const D3D12_ROOT_PARAMETER> rootParameters)
 {
-    ComPtr<ID3DBlob> vertexShader =
-        CompileShader(shaderPath, vertexEntry, "vs_5_1");
-
-    ComPtr<ID3DBlob> pixelShader =
-        CompileShader(shaderPath, pixelEntry, "ps_5_1");
+    ComPtr<ID3DBlob> vertexShader = CompileShader(shaderPath, vertexEntry, "vs_5_1");
+    ComPtr<ID3DBlob> pixelShader = CompileShader(shaderPath, pixelEntry, "ps_5_1");
 
     D3D12_ROOT_SIGNATURE_DESC rootDesc{};
-
-    rootDesc.Flags =
-        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+    rootDesc.NumParameters = static_cast<UINT>(rootParameters.size());
+    rootDesc.pParameters = rootParameters.data();
+    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
     ComPtr<ID3DBlob> signature;
     ComPtr<ID3DBlob> errors;
@@ -101,7 +89,7 @@ GraphicsPipeline::GraphicsPipeline(
 
         if (errors)
         {
-            message += ": ";
+            message += "\n";
             message.append(
                 static_cast<const char*>(errors->GetBufferPointer()),
                 errors->GetBufferSize()
@@ -131,27 +119,19 @@ GraphicsPipeline::GraphicsPipeline(
         pixelShader->GetBufferSize()
     };
 
-    desc.BlendState.AlphaToCoverageEnable = FALSE;
-    desc.BlendState.IndependentBlendEnable = FALSE;
-
     D3D12_RENDER_TARGET_BLEND_DESC blendDesc{};
-    blendDesc.BlendEnable = FALSE;
-    blendDesc.LogicOpEnable = FALSE;
     blendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
     desc.BlendState.RenderTarget[0] = blendDesc;
-
     desc.SampleMask = UINT_MAX;
 
     desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
     desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-    desc.RasterizerState.FrontCounterClockwise = FALSE;
     desc.RasterizerState.DepthClipEnable = TRUE;
 
     desc.DepthStencilState.DepthEnable = FALSE;
     desc.DepthStencilState.StencilEnable = FALSE;
 
-    desc.InputLayout = { nullptr, 0 };
     desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
     desc.NumRenderTargets = 1;
@@ -164,9 +144,7 @@ GraphicsPipeline::GraphicsPipeline(
     ), "Failed to create graphics pipeline state");
 }
 
-void GraphicsPipeline::Bind(
-    ID3D12GraphicsCommandList* commandList
-) const
+void GraphicsPipeline::Bind(ID3D12GraphicsCommandList* commandList) const
 {
     commandList->SetGraphicsRootSignature(rootSignature_.Get());
     commandList->SetPipelineState(pipelineState_.Get());

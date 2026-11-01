@@ -10,10 +10,10 @@ using Microsoft::WRL::ComPtr;
 
 namespace
 {
-    void Check(HRESULT result, const char* error)
+    void Check(HRESULT result, const char* message)
     {
         if (FAILED(result))
-            throw std::runtime_error(error);
+            throw std::runtime_error(message);
     }
 
     std::filesystem::path GetShaderPath()
@@ -40,7 +40,9 @@ D3D12Renderer::D3D12Renderer(HWND window, IDXGIFactory6* factory, ID3D12Device* 
     skyPass_ = std::make_unique<SkyPass>(
         device_.Get(),
         GetShaderPath(),
-        DXGI_FORMAT_R8G8B8A8_UNORM
+        DXGI_FORMAT_R8G8B8A8_UNORM,
+        width,
+        height
     );
 
     viewport_.TopLeftX = 0.0f;
@@ -57,7 +59,9 @@ D3D12Renderer::D3D12Renderer(HWND window, IDXGIFactory6* factory, ID3D12Device* 
     };
 
     Check(device_->CreateFence(
-        0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)
+        0,
+        D3D12_FENCE_FLAG_NONE,
+        IID_PPV_ARGS(&fence_)
     ), "Failed to create fence");
 
     fenceEvent_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
@@ -76,7 +80,7 @@ D3D12Renderer::~D3D12Renderer()
         }
         catch (...)
         {
-            // Avoid throwing during destruction.
+            // Avoid throwing during GPU shutdown.
         }
 
         CloseHandle(fenceEvent_);
@@ -89,7 +93,8 @@ void D3D12Renderer::CreateCommandObjects()
     queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 
     Check(device_->CreateCommandQueue(
-        &queueDesc, IID_PPV_ARGS(&commandQueue_)
+        &queueDesc,
+        IID_PPV_ARGS(&commandQueue_)
     ), "Failed to create command queue");
 
     Check(device_->CreateCommandAllocator(
@@ -133,7 +138,8 @@ void D3D12Renderer::CreateSwapChain(HWND window, IDXGIFactory6* factory, int wid
     Check(swapChain.As(&swapChain_), "Failed to query swap chain 3");
 
     Check(factory->MakeWindowAssociation(
-        window, DXGI_MWA_NO_ALT_ENTER
+        window,
+        DXGI_MWA_NO_ALT_ENTER
     ), "Failed to disable DXGI Alt+Enter handling");
 }
 
@@ -144,7 +150,8 @@ void D3D12Renderer::CreateRenderTargets()
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 
     Check(device_->CreateDescriptorHeap(
-        &heapDesc, IID_PPV_ARGS(&rtvHeap_)
+        &heapDesc,
+        IID_PPV_ARGS(&rtvHeap_)
     ), "Failed to create RTV heap");
 
     rtvDescriptorSize_ = device_->GetDescriptorHandleIncrementSize(
@@ -157,7 +164,8 @@ void D3D12Renderer::CreateRenderTargets()
     for (UINT i = 0; i < FrameCount; ++i)
     {
         Check(swapChain_->GetBuffer(
-            i, IID_PPV_ARGS(&renderTargets_[i])
+            i,
+            IID_PPV_ARGS(&renderTargets_[i])
         ), "Failed to acquire back buffer");
 
         device_->CreateRenderTargetView(
@@ -172,6 +180,7 @@ void D3D12Renderer::CreateRenderTargets()
 
 void D3D12Renderer::Render()
 {
+    const float elapsedSeconds = clock_.GetElapsedSeconds();
     const UINT frameIndex = swapChain_->GetCurrentBackBufferIndex();
 
     Check(commandAllocator_->Reset(), "Failed to reset command allocator");
@@ -188,6 +197,7 @@ void D3D12Renderer::Render()
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 
+    // Transition the back buffer before rendering.
     commandList_->ResourceBarrier(1, &barrier);
 
     D3D12_CPU_DESCRIPTOR_HANDLE rtv =
@@ -196,14 +206,16 @@ void D3D12Renderer::Render()
     rtv.ptr += static_cast<SIZE_T>(frameIndex) * rtvDescriptorSize_;
 
     constexpr float clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+
     commandList_->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
 
     commandList_->RSSetViewports(1, &viewport_);
     commandList_->RSSetScissorRects(1, &scissorRect_);
     commandList_->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
 
-    skyPass_->Render(commandList_.Get());
+    skyPass_->Render(commandList_.Get(), elapsedSeconds);
 
+    // Make the completed back buffer available for presentation.
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
 
@@ -223,12 +235,16 @@ void D3D12Renderer::WaitForGPU()
 {
     const UINT64 value = ++fenceValue_;
 
-    Check(commandQueue_->Signal(fence_.Get(), value), "Failed to signal fence");
+    Check(commandQueue_->Signal(
+        fence_.Get(),
+        value
+    ), "Failed to signal fence");
 
     if (fence_->GetCompletedValue() < value)
     {
         Check(fence_->SetEventOnCompletion(
-            value, fenceEvent_
+            value,
+            fenceEvent_
         ), "Failed to register fence event");
 
         if (WaitForSingleObject(fenceEvent_, INFINITE) != WAIT_OBJECT_0)
