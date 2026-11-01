@@ -18,4 +18,16 @@ target_link_libraries(AtmosDX12 PRIVATE
     d3d12
     dxgi
     dxguid
+    d3dcompiler
+)
+
+add_custom_command(TARGET AtmosDX12 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:AtmosDX12>/shaders"
+
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Sky.hlsl"
+        "$<TARGET_FILE_DIR:AtmosDX12>/shaders/Sky.hlsl"
+
+    VERBATIM
 )

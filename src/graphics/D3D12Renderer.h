@@ -26,6 +26,7 @@ private:
     void CreateCommandObjects();
     void CreateSwapChain(HWND window, IDXGIFactory6* factory, int width, int height);
     void CreateRenderTargets();
+    void CreatePipeline();
     void WaitForGPU();
 
     Microsoft::WRL::ComPtr<ID3D12Device> device_;
@@ -36,6 +37,12 @@ private:
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator_;
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList_;
     Microsoft::WRL::ComPtr<ID3D12Fence> fence_;
+
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
+
+    D3D12_VIEWPORT viewport_{};
+    D3D12_RECT scissorRect_{};
 
     UINT rtvDescriptorSize_ = 0;
     UINT64 fenceValue_ = 0;
