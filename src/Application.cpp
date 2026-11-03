@@ -10,9 +10,9 @@ namespace
 
 Application::Application(HINSTANCE instance, int width, int height)
     : window_(instance, width, height, input_),
+      ui_(window_.GetHandle(), timeManager_, skySettings_),
       renderer_(std::make_unique<Renderer>(window_.GetHandle(), width, height))
 {
-    windowShown = false;
 }
 
 Application::~Application() = default;
@@ -20,6 +20,7 @@ Application::~Application() = default;
 int Application::Run()
 {
     int exitCode = 0;
+    float previousSeconds = clock_.GetElapsedSeconds();
 
     while (window_.ProcessMessages(exitCode))
     {
@@ -29,22 +30,37 @@ int Application::Run()
             continue;
         }
 
-        UpdateCamera();
+        const float elapsedSeconds = clock_.GetElapsedSeconds();
+        timeManager_.Update(elapsedSeconds - previousSeconds);
+        previousSeconds = elapsedSeconds;
 
-        CameraBasis basis = camera_.GetBasis();
+        UpdateCamera();
+        celestialManager_.Update(timeManager_.GetTimeOfDay());
+        ui_.Refresh();
+
+        const CameraBasis basis = camera_.GetBasis();
+        const CelestialState& celestial = celestialManager_.GetState();
+
         FrameData frameData{};
         frameData.cameraRight = basis.right;
         frameData.cameraUp = basis.up;
         frameData.cameraForward = basis.forward;
         frameData.tanHalfFovY = basis.tanHalfFovY;
-        frameData.elapsedSeconds = clock_.GetElapsedSeconds();
+        frameData.elapsedSeconds = elapsedSeconds;
+        frameData.timeOfDay = timeManager_.GetTimeOfDay();
+        frameData.sunDirection = celestial.sunDirection;
+        frameData.moonDirection = celestial.moonDirection;
+        frameData.sunIntensity = skySettings_.sunIntensity;
+        frameData.moonIntensity = skySettings_.moonIntensity;
+        frameData.starIntensity = skySettings_.starIntensity;
 
         renderer_->Render(frameData);
 
-        if (!windowShown)
+        if (!windowShown_)
         {
             window_.Show();
-            windowShown = true;
+            ui_.Show();
+            windowShown_ = true;
         }
     }
 

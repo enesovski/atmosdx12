@@ -24,9 +24,7 @@ void SkyPass::CreatePipeline(ID3D12Device* device, const std::filesystem::path& 
     constantBufferParameter.Descriptor.RegisterSpace = 0;
     constantBufferParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-    std::array<D3D12_ROOT_PARAMETER, 1> rootParameters{
-        constantBufferParameter
-    };
+    std::array<D3D12_ROOT_PARAMETER, 1> rootParameters{ constantBufferParameter };
 
     pipeline_ = std::make_unique<GraphicsPipeline>(
         device, shaderPath, "VSMain", "PSMain", renderTargetFormat, rootParameters
@@ -49,13 +47,24 @@ void SkyPass::UpdateConstants(UINT frameIndex, const FrameData& frameData)
         frameData.cameraForward.x, frameData.cameraForward.y, frameData.cameraForward.z, 0.0f
     };
 
-    constants.params = {
+    constants.viewParams = {
         frameData.elapsedSeconds,
         static_cast<float>(width_) / static_cast<float>(height_),
         frameData.tanHalfFovY,
-        0.0f
+        frameData.timeOfDay
     };
 
+    constants.sunParams = {
+        frameData.sunDirection.x, frameData.sunDirection.y, frameData.sunDirection.z,
+        frameData.sunIntensity
+    };
+
+    constants.moonParams = {
+        frameData.moonDirection.x, frameData.moonDirection.y, frameData.moonDirection.z,
+        frameData.moonIntensity
+    };
+
+    constants.nightParams = { frameData.starIntensity, 0.0f, 0.0f, 0.0f };
     constantBuffer_.Write(frameIndex, &constants, sizeof(constants));
 }
 

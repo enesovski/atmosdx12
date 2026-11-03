@@ -4,6 +4,10 @@
 #include "input/Input.h"
 #include "platform/Window.h"
 #include "scene/Camera.h"
+#include "scene/CelestialManager.h"
+#include "scene/SkySettings.h"
+#include "scene/TimeManager.h"
+#include "ui/UI.h"
 
 #include <memory>
 
@@ -26,7 +30,11 @@ private:
     Input input_;
     Window window_;
     Camera camera_;
+    TimeManager timeManager_;
+    CelestialManager celestialManager_;
+    SkySettings skySettings_;
+    UI ui_;
     std::unique_ptr<Renderer> renderer_;
     FrameClock clock_;
-    bool windowShown;
+    bool windowShown_ = false;
 };

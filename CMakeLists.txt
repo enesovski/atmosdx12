@@ -35,6 +35,16 @@ add_executable(AtmosDX12
     src/graphics/GraphicsPipeline.h
     src/graphics/GraphicsPipeline.cpp
     src/graphics/UploadBuffer.h
+    src/scene/TimeManager.h
+    src/scene/TimeManager.cpp
+
+    src/scene/CelestialManager.h
+    src/scene/CelestialManager.cpp
+
+    src/scene/SkySettings.h
+
+    src/ui/UI.h
+    src/ui/UI.cpp
 
     src/graphics/passes/SkyPass.h
     src/graphics/passes/SkyPass.cpp
@@ -47,6 +57,7 @@ target_link_libraries(AtmosDX12 PRIVATE
     dxgi
     dxguid
     d3dcompiler
+    comctl32
 )
 
 add_custom_command(TARGET AtmosDX12 POST_BUILD
