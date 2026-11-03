@@ -2,7 +2,7 @@
 
 A real-time atmospheric rendering project built with **C++20, Direct3D 12, and HLSL**.
 
-> **Status:** Early development. Currently initializes a Direct3D 12 hardware device. Rendering features are planned, not yet implemented.
+> **Status:** Early development. Renders a procedural sky with a moving sun, a day/night cycle, and mouse camera controls.
 
 ## Planned Features
 
@@ -30,7 +30,13 @@ cmake -S . -B build
 cmake --build build --config Debug
 ```
 
-The current executable prints the selected GPU and confirms Direct3D 12 initialization. It does not open a rendering window yet.
+The executable prints the selected GPU and opens a fixed 1280×720 rendering window.
+Hold the right mouse button to look around and use the mouse wheel to adjust FOV.
+The sky's day/night cycle runs continuously, including while the window is minimized.
+
+Shaders are copied beside the executable and resolved relative to it, so the program
+can be launched from any working directory. See [ARCHITECTURE.md](ARCHITECTURE.md)
+for resource ownership and the frame lifecycle.
 
 ## Roadmap
 

@@ -3,14 +3,14 @@
 
 #include <d3d12.h>
 #include <DirectXMath.h>
-#include <wrl/client.h>
 
-#include <cstdint>
+#include "../UploadBuffer.h"
+
 #include <filesystem>
 #include <memory>
 
-class Camera;
 class GraphicsPipeline;
+struct FrameData;
 
 class SkyPass
 {
@@ -20,7 +20,10 @@ public:
 
     ~SkyPass();
 
-    void Render(ID3D12GraphicsCommandList* commandList, const Camera& camera, float elapsedSeconds);
+    SkyPass(const SkyPass&) = delete;
+    SkyPass& operator=(const SkyPass&) = delete;
+
+    void Record(ID3D12GraphicsCommandList* commandList, UINT frameIndex, const FrameData& frameData);
 
 private:
     struct SkyConstants
@@ -36,13 +39,11 @@ private:
     void CreatePipeline(ID3D12Device* device, const std::filesystem::path& shaderPath,
                         DXGI_FORMAT renderTargetFormat);
 
-    void CreateConstantBuffer(ID3D12Device* device);
-    void UpdateConstants(const Camera& camera, float elapsedSeconds);
+    void UpdateConstants(UINT frameIndex, const FrameData& frameData);
 
     std::unique_ptr<GraphicsPipeline> pipeline_;
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> constantBuffer_;
-    std::uint8_t* mappedData_ = nullptr;
+    UploadBuffer constantBuffer_;
 
     int width_;
     int height_;

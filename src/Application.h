@@ -1,12 +1,13 @@
 #pragma once
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-
+#include "core/FrameClock.h"
 #include "input/Input.h"
+#include "platform/Window.h"
 #include "scene/Camera.h"
 
-class D3D12Renderer;
+#include <memory>
+
+class Renderer;
 
 class Application
 {
@@ -17,19 +18,14 @@ public:
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
 
-    int Run(D3D12Renderer& renderer);
-
-    HWND GetWindowHandle() const { return window_; }
+    int Run();
 
 private:
-    static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-
-    LRESULT HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     void UpdateCamera();
 
-    HINSTANCE instance_;
-    HWND window_ = nullptr;
-
     Input input_;
+    Window window_;
     Camera camera_;
+    std::unique_ptr<Renderer> renderer_;
+    FrameClock clock_;
 };

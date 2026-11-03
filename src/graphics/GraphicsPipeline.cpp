@@ -1,5 +1,6 @@
 
 #include "GraphicsPipeline.h"
+#include "../core/DxError.h"
 
 #include <d3dcompiler.h>
 
@@ -10,12 +11,6 @@ using Microsoft::WRL::ComPtr;
 
 namespace
 {
-    void Check(HRESULT result, const char* message)
-    {
-        if (FAILED(result))
-            throw std::runtime_error(message);
-    }
-
     ComPtr<ID3DBlob> CompileShader(const std::filesystem::path& path,
                                   const std::string& entryPoint, const char* target)
     {
@@ -99,7 +94,7 @@ GraphicsPipeline::GraphicsPipeline(ID3D12Device* device, const std::filesystem::
         throw std::runtime_error(message);
     }
 
-    Check(device->CreateRootSignature(
+    CheckHRESULT(device->CreateRootSignature(
         0,
         signature->GetBufferPointer(),
         signature->GetBufferSize(),
@@ -138,7 +133,7 @@ GraphicsPipeline::GraphicsPipeline(ID3D12Device* device, const std::filesystem::
     desc.RTVFormats[0] = renderTargetFormat;
     desc.SampleDesc.Count = 1;
 
-    Check(device->CreateGraphicsPipelineState(
+    CheckHRESULT(device->CreateGraphicsPipelineState(
         &desc,
         IID_PPV_ARGS(&pipelineState_)
     ), "Failed to create graphics pipeline state");
