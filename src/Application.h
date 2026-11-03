@@ -28,4 +28,5 @@ private:
     Camera camera_;
     std::unique_ptr<Renderer> renderer_;
     FrameClock clock_;
+    bool windowShown;
 };

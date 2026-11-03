@@ -12,6 +12,7 @@ Application::Application(HINSTANCE instance, int width, int height)
     : window_(instance, width, height, input_),
       renderer_(std::make_unique<Renderer>(window_.GetHandle(), width, height))
 {
+    windowShown = false;
 }
 
 Application::~Application() = default;
@@ -39,6 +40,12 @@ int Application::Run()
         frameData.elapsedSeconds = clock_.GetElapsedSeconds();
 
         renderer_->Render(frameData);
+
+        if (!windowShown)
+        {
+            window_.Show();
+            windowShown = true;
+        }
     }
 
     return exitCode;

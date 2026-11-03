@@ -16,6 +16,7 @@ public:
     HWND GetHandle() const { return window_; }
     bool IsMinimized() const { return IsIconic(window_) != FALSE; }
     bool ProcessMessages(int& exitCode);
+    void Show();
 
 private:
     static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);

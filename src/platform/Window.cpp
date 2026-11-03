@@ -38,7 +38,10 @@ Window::Window(HINSTANCE instance, int width, int height, Input& input)
         UnregisterClassW(WindowClassName, instance_);
         throw std::runtime_error("Failed to create window");
     }
+}
 
+void Window::Show()
+{
     ShowWindow(window_, SW_SHOW);
 }
 
