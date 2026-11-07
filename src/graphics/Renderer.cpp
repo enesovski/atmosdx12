@@ -1,4 +1,5 @@
 #include "Renderer.h"
+#include "RenderView.h"
 
 #include <filesystem>
 #include <iostream>
@@ -23,14 +24,8 @@ Renderer::Renderer(HWND window, int width, int height)
     : swapChain_(window, context_.GetFactory(), context_.GetDevice(),
                  context_.GetCommandQueue(), width, height),
       frameScheduler_(context_.GetDevice(), context_.GetCommandQueue()),
-      skyPass_(context_.GetDevice(), GetShaderPath(), GraphicsConfig::BackBufferFormat, width, height)
+      skyPass_(context_.GetDevice(), GetShaderPath(), GraphicsConfig::BackBufferFormat)
 {
-    viewport_.Width = static_cast<float>(width);
-    viewport_.Height = static_cast<float>(height);
-    viewport_.MinDepth = 0.0f;
-    viewport_.MaxDepth = 1.0f;
-
-    scissorRect_ = { 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
 }
 
 Renderer::~Renderer()
@@ -46,7 +41,7 @@ Renderer::~Renderer()
     }
 }
 
-void Renderer::Render(const FrameData& frameData)
+void Renderer::Render(const RenderView& view, const SkySettings& skySettings)
 {
     const UINT frameIndex = frameScheduler_.BeginFrame();
     const UINT backBufferIndex = swapChain_.GetBackBufferIndex();
@@ -63,13 +58,18 @@ void Renderer::Render(const FrameData& frameData)
 
     D3D12_CPU_DESCRIPTOR_HANDLE rtv = swapChain_.GetRenderTargetView(backBufferIndex);
     constexpr float clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    const D3D12_VIEWPORT viewport{
+        0.0f, 0.0f, static_cast<float>(view.viewportWidth),
+        static_cast<float>(view.viewportHeight), 0.0f, 1.0f
+    };
+    const D3D12_RECT scissorRect{ 0, 0, view.viewportWidth, view.viewportHeight };
 
     commandList->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
-    commandList->RSSetViewports(1, &viewport_);
-    commandList->RSSetScissorRects(1, &scissorRect_);
+    commandList->RSSetViewports(1, &viewport);
+    commandList->RSSetScissorRects(1, &scissorRect);
     commandList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
 
-    skyPass_.Record(commandList, frameIndex, frameData);
+    skyPass_.Record(commandList, frameIndex, view, skySettings);
 
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;

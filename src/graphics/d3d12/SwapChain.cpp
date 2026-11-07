@@ -1,5 +1,5 @@
 #include "SwapChain.h"
-#include "../core/DxError.h"
+#include "DxError.h"
 
 using Microsoft::WRL::ComPtr;
 

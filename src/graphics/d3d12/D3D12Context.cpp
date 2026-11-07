@@ -1,5 +1,5 @@
 #include "D3D12Context.h"
-#include "../core/DxError.h"
+#include "DxError.h"
 
 #include <iostream>
 #include <stdexcept>

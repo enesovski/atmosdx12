@@ -11,9 +11,6 @@ add_executable(AtmosDX12
     src/Application.h
     src/Application.cpp
 
-    src/core/FrameClock.h
-    src/core/DxError.h
-
     src/platform/Window.h
     src/platform/Window.cpp
 
@@ -21,30 +18,25 @@ add_executable(AtmosDX12
 
     src/scene/Camera.h
     src/scene/Camera.cpp
-
-    src/graphics/D3D12Context.h
-    src/graphics/D3D12Context.cpp
-    src/graphics/SwapChain.h
-    src/graphics/SwapChain.cpp
-    src/graphics/FrameScheduler.h
-    src/graphics/FrameScheduler.cpp
-    src/graphics/FrameData.h
-    src/graphics/GraphicsConfig.h
-    src/graphics/Renderer.h
-    src/graphics/Renderer.cpp
-    src/graphics/GraphicsPipeline.h
-    src/graphics/GraphicsPipeline.cpp
-    src/graphics/UploadBuffer.h
-    src/scene/TimeManager.h
-    src/scene/TimeManager.cpp
-
-    src/scene/CelestialManager.h
-    src/scene/CelestialManager.cpp
-
     src/scene/SkySettings.h
 
-    src/ui/UI.h
-    src/ui/UI.cpp
+    src/graphics/d3d12/D3D12Context.h
+    src/graphics/d3d12/D3D12Context.cpp
+    src/graphics/d3d12/SwapChain.h
+    src/graphics/d3d12/SwapChain.cpp
+    src/graphics/d3d12/FrameScheduler.h
+    src/graphics/d3d12/FrameScheduler.cpp
+    src/graphics/d3d12/DxError.h
+    src/graphics/d3d12/GraphicsConfig.h
+    src/graphics/d3d12/GraphicsPipeline.h
+    src/graphics/d3d12/GraphicsPipeline.cpp
+    src/graphics/d3d12/ShaderCompiler.h
+    src/graphics/d3d12/ShaderCompiler.cpp
+    src/graphics/d3d12/UploadBuffer.h
+
+    src/graphics/RenderView.h
+    src/graphics/Renderer.h
+    src/graphics/Renderer.cpp
 
     src/graphics/passes/SkyPass.h
     src/graphics/passes/SkyPass.cpp
@@ -52,12 +44,15 @@ add_executable(AtmosDX12
 
 target_compile_definitions(AtmosDX12 PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 
+if(MSVC)
+    target_compile_options(AtmosDX12 PRIVATE /W4)
+endif()
+
 target_link_libraries(AtmosDX12 PRIVATE
     d3d12
     dxgi
     dxguid
     d3dcompiler
-    comctl32
 )
 
 add_custom_command(TARGET AtmosDX12 POST_BUILD

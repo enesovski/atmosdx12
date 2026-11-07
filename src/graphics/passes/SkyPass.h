@@ -3,25 +3,26 @@
 #include <d3d12.h>
 #include <DirectXMath.h>
 
-#include "../UploadBuffer.h"
+#include "../d3d12/GraphicsPipeline.h"
+#include "../d3d12/UploadBuffer.h"
 
+#include <cstddef>
 #include <filesystem>
-#include <memory>
 
-class GraphicsPipeline;
-struct FrameData;
+struct RenderView;
+struct SkySettings;
 
 class SkyPass
 {
 public:
     SkyPass(ID3D12Device* device, const std::filesystem::path& shaderPath,
-            DXGI_FORMAT renderTargetFormat, int width, int height);
-    ~SkyPass();
+            DXGI_FORMAT renderTargetFormat);
 
     SkyPass(const SkyPass&) = delete;
     SkyPass& operator=(const SkyPass&) = delete;
 
-    void Record(ID3D12GraphicsCommandList* commandList, UINT frameIndex, const FrameData& frameData);
+    void Record(ID3D12GraphicsCommandList* commandList, UINT frameIndex,
+                const RenderView& view, const SkySettings& skySettings);
 
 private:
     struct SkyConstants
@@ -31,19 +32,15 @@ private:
         DirectX::XMFLOAT4 cameraForward;
         DirectX::XMFLOAT4 viewParams;
         DirectX::XMFLOAT4 sunParams;
-        DirectX::XMFLOAT4 moonParams;
-        DirectX::XMFLOAT4 nightParams;
     };
 
-    static_assert(sizeof(SkyConstants) == 112);
+    static_assert(sizeof(SkyConstants) == 80);
+    static_assert(offsetof(SkyConstants, cameraRight) == 0);
+    static_assert(offsetof(SkyConstants, cameraUp) == 16);
+    static_assert(offsetof(SkyConstants, cameraForward) == 32);
+    static_assert(offsetof(SkyConstants, viewParams) == 48);
+    static_assert(offsetof(SkyConstants, sunParams) == 64);
 
-    void CreatePipeline(ID3D12Device* device, const std::filesystem::path& shaderPath,
-                        DXGI_FORMAT renderTargetFormat);
-    void UpdateConstants(UINT frameIndex, const FrameData& frameData);
-
-    std::unique_ptr<GraphicsPipeline> pipeline_;
+    GraphicsPipeline pipeline_;
     UploadBuffer constantBuffer_;
-
-    int width_;
-    int height_;
 };

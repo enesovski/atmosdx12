@@ -1,63 +1,55 @@
 # AtmosDX12
 
-A real-time atmospheric rendering project built with DirectX 12.
+A lightweight atmospheric renderer built with **C++20, Direct3D 12, and HLSL**.
 
-The goal is to explore real-time graphics programming and create a stylized, interactive atmosphere with dynamic skies, clouds, lighting, and weather effects.
+The current renderer draws a stylized sky gradient with a sun disk, glow, and
+horizon/twilight colors driven by sun elevation. It is a specialized renderer,
+with no time simulation or control UI.
 
-## Tech Stack
+## Requirements
 
-- **C++20**
-- **DirectX 12**
-- **HLSL**
-- **Win32 API**
-- **CMake**
+- Windows 10/11 and a Direct3D 12-capable hardware GPU
+- Visual Studio C++ Build Tools (MSVC) and Windows SDK
+- CMake 3.21 or newer
 
-## Features
+## Build and run
 
-- Modular DirectX 12 rendering architecture
-- Procedural sky rendering
-- Dynamic day/night cycle
-- Sun and moon simulation
-- Procedural stars
-- Interactive camera controls
-- Time-of-day and sky settings UI
-- Frame-based GPU synchronization
-
-## Getting Started
-
-**Requirements:** Windows 10/11, a DirectX 12-compatible GPU, CMake, Visual Studio C++ Build Tools, and Windows SDK.
-
-Clone the repository:
-
-```bash
-git clone https://github.com/enesovski/atmosdx12.git
-cd atmosdx12
-```
-
-Configure and build using a Visual Studio Developer PowerShell:
+From a **Developer PowerShell for Visual Studio** shell:
 
 ```powershell
-cmake -S . -B build
+cmake -S . -B build -A x64
 cmake --build build --config Debug
-```
-
-Run:
-
-```powershell
 .\build\Debug\AtmosDX12.exe
 ```
 
-## Controls
+The executable prints the selected GPU and opens a fixed 1280x720 window.
+Hold the right mouse button to look around and use the mouse wheel to adjust FOV.
+Minimizing suspends rendering until another window message arrives.
 
-- **Right Mouse Button + Drag:** Look around
-- **Mouse Wheel:** Adjust field of view
-- **Sky Controls:** Change time of day, day duration, and celestial intensities
+Set `sunAzimuthDegrees`, `sunElevationDegrees`, and `sunIntensity` in
+`src/scene/SkySettings.h` to change the default sky. +Y is up; azimuth zero points
+along +Z, increasing toward +X. Elevation is measured above the horizon.
+The defaults approximate the former initial sun position.
 
-## Planned Features
+Shaders are copied beside the executable and resolved relative to it, so the
+program can be launched from any working directory. They compile at startup
+with Shader Model 5.1; Debug enables shader debug information and disables
+optimization. CMake builds C++ and copies HLSL; it does not compile HLSL.
 
-- Atmospheric scattering
-- Volumetric clouds
-- Volumetric fog and sun shafts
-- Dynamic weather effects
-- GPU optimizations and temporal rendering
-- Unity native plugin
+The renderer consumes camera-only `RenderView` data and separate `SkySettings`.
+Passes live in `src/graphics/passes`; reusable Direct3D 12 infrastructure lives
+in `src/graphics/d3d12`. Rendering order is explicit and GPU frame-slot
+synchronization is retained.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and frame synchronization.
+
+## Future direction
+
+Geometry rendering, HDR, volumetric fog, volumetric clouds, and post-processing
+are future work. The current code contains only the infrastructure and sky pass
+it uses today; it is not a general-purpose game engine.
+
+## References
+
+- [Direct3D 12 documentation](https://learn.microsoft.com/en-us/windows/win32/direct3d12/direct3d-12-graphics)
+- [Microsoft D3D12 samples](https://github.com/microsoft/DirectX-Graphics-Samples/tree/master/Samples/Desktop/D3D12HelloWorld)

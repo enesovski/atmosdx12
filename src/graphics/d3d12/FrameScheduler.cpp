@@ -1,5 +1,5 @@
 #include "FrameScheduler.h"
-#include "../core/DxError.h"
+#include "DxError.h"
 
 #include <limits>
 #include <stdexcept>

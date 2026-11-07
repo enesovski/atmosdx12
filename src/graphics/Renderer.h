@@ -1,11 +1,12 @@
 #pragma once
 
-#include "D3D12Context.h"
-#include "SwapChain.h"
-#include "FrameScheduler.h"
+#include "d3d12/D3D12Context.h"
+#include "d3d12/SwapChain.h"
+#include "d3d12/FrameScheduler.h"
 #include "passes/SkyPass.h"
 
-struct FrameData;
+struct RenderView;
+struct SkySettings;
 
 class Renderer
 {
@@ -16,7 +17,7 @@ public:
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    void Render(const FrameData& frameData);
+    void Render(const RenderView& view, const SkySettings& skySettings);
 
 private:
     // Dependencies are constructed first and destroyed last.
@@ -24,7 +25,4 @@ private:
     SwapChain swapChain_;
     FrameScheduler frameScheduler_;
     SkyPass skyPass_;
-
-    D3D12_VIEWPORT viewport_{};
-    D3D12_RECT scissorRect_{};
 };

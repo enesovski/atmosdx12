@@ -3,7 +3,7 @@
 #include <d3d12.h>
 #include <wrl/client.h>
 
-#include "../core/DxError.h"
+#include "DxError.h"
 
 #include <cstddef>
 #include <cstring>
