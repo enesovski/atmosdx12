@@ -1,9 +1,13 @@
+
 #pragma once
 
 #include "d3d12/D3D12Context.h"
 #include "d3d12/SwapChain.h"
 #include "d3d12/FrameScheduler.h"
+#include "d3d12/RenderTexture.h"
+
 #include "passes/SkyPass.h"
+#include "passes/TonemapPass.h"
 
 struct RenderView;
 struct SkySettings;
@@ -20,9 +24,12 @@ public:
     void Render(const RenderView& view, const SkySettings& skySettings);
 
 private:
-    // Dependencies are constructed first and destroyed last.
     D3D12Context context_;
     SwapChain swapChain_;
     FrameScheduler frameScheduler_;
+
+    RenderTexture hdrTarget_;
+
     SkyPass skyPass_;
+    TonemapPass tonemapPass_;
 };

@@ -26,6 +26,8 @@ add_executable(AtmosDX12
     src/graphics/d3d12/SwapChain.cpp
     src/graphics/d3d12/FrameScheduler.h
     src/graphics/d3d12/FrameScheduler.cpp
+    src/graphics/d3d12/RenderTexture.h
+    src/graphics/d3d12/RenderTexture.cpp
     src/graphics/d3d12/DxError.h
     src/graphics/d3d12/GraphicsConfig.h
     src/graphics/d3d12/GraphicsPipeline.h
@@ -40,9 +42,14 @@ add_executable(AtmosDX12
 
     src/graphics/passes/SkyPass.h
     src/graphics/passes/SkyPass.cpp
+    src/graphics/passes/TonemapPass.h
+    src/graphics/passes/TonemapPass.cpp
 )
 
-target_compile_definitions(AtmosDX12 PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_definitions(AtmosDX12 PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+)
 
 if(MSVC)
     target_compile_options(AtmosDX12 PRIVATE /W4)
@@ -61,7 +68,8 @@ add_custom_command(TARGET AtmosDX12 POST_BUILD
 
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Sky.hlsl"
-        "$<TARGET_FILE_DIR:AtmosDX12>/shaders/Sky.hlsl"
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Tonemap.hlsl"
+        "$<TARGET_FILE_DIR:AtmosDX12>/shaders"
 
     VERBATIM
 )

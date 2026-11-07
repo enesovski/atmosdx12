@@ -88,5 +88,5 @@ float4 PSMain(VertexOutput input) : SV_TARGET
     float3 color = GetSkyColor(viewDirection, sunDirection);
     color += GetSunColor(viewDirection, sunDirection);
 
-    return float4(saturate(color), 1.0);
+    return float4(color, 1.0);
 }
