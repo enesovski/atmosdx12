@@ -1,4 +1,5 @@
 #include "graphics/d3d12/CommandContext.h"
+#include "graphics/d3d12/Buffer.h"
 #include "graphics/d3d12/GraphicsDevice.h"
 #include "graphics/d3d12/Texture.h"
 #include "graphics/d3d12/UploadAllocator.h"
@@ -69,28 +70,61 @@ namespace atmos
         pendingBarriers_.clear();
     }
 
-    void CommandContext::SetRenderTarget(Texture& color, Texture* depth)
+    void CommandContext::SetRenderTargets(std::span<Texture* const> colors, Texture* depth, bool readOnlyDepth)
     {
-        Transition(color, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        ATMOS_ASSERT(!colors.empty() || depth, "No render targets given");
+        ATMOS_ASSERT(colors.size() <= D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT, "Too many render targets");
 
-        const D3D12_CPU_DESCRIPTOR_HANDLE rtv = color.GetRtv();
+        D3D12_CPU_DESCRIPTOR_HANDLE rtvs[D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT]{};
+
+        for (size_t i = 0; i < colors.size(); ++i)
+        {
+            Transition(*colors[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
+            rtvs[i] = colors[i]->GetRtv();
+        }
+
         D3D12_CPU_DESCRIPTOR_HANDLE dsv{};
 
         if (depth)
         {
-            Transition(*depth, D3D12_RESOURCE_STATE_DEPTH_WRITE);
-            dsv = depth->GetDsv();
+            if (!readOnlyDepth)
+                Transition(*depth, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+            else if (!(depth->GetState() & D3D12_RESOURCE_STATE_DEPTH_READ))  // Keep e.g. DEPTH_READ | SRV.
+                Transition(*depth, D3D12_RESOURCE_STATE_DEPTH_READ);
+
+            dsv = depth->GetDsv(readOnlyDepth);
         }
 
-        commandList_->OMSetRenderTargets(1, &rtv, FALSE, depth ? &dsv : nullptr);
+        commandList_->OMSetRenderTargets(static_cast<UINT>(colors.size()), rtvs, FALSE, depth ? &dsv : nullptr);
 
-        const D3D12_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(color.GetWidth()),
-                                       static_cast<float>(color.GetHeight()), 0.0f, 1.0f };
-        const D3D12_RECT scissor{ 0, 0, static_cast<LONG>(color.GetWidth()),
-                                  static_cast<LONG>(color.GetHeight()) };
+        const Texture& sizeSource = colors.empty() ? *depth : *colors[0];
+        const D3D12_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(sizeSource.GetWidth()),
+                                       static_cast<float>(sizeSource.GetHeight()), 0.0f, 1.0f };
+        const D3D12_RECT scissor{ 0, 0, static_cast<LONG>(sizeSource.GetWidth()),
+                                  static_cast<LONG>(sizeSource.GetHeight()) };
 
         commandList_->RSSetViewports(1, &viewport);
         commandList_->RSSetScissorRects(1, &scissor);
+    }
+
+    void CommandContext::SetRenderTarget(Texture& color, Texture* depth)
+    {
+        Texture* colors[] = { &color };
+        SetRenderTargets(colors, depth);
+    }
+
+    void CommandContext::SetIndexBuffer(const Buffer& indices)
+    {
+        const D3D12_INDEX_BUFFER_VIEW view{ indices.GetGpuAddress(), static_cast<UINT>(indices.GetSize()),
+                                            DXGI_FORMAT_R32_UINT };
+        commandList_->IASetIndexBuffer(&view);
+    }
+
+    void CommandContext::DrawIndexed(uint32_t indexCount, uint32_t startIndex, uint32_t instanceCount)
+    {
+        ATMOS_ASSERT(boundPipelineType_ == PipelineType::Graphics, "Draw needs a graphics pipeline");
+        FlushBarriers();
+        commandList_->DrawIndexedInstanced(indexCount, instanceCount, startIndex, 0, 0);
     }
 
     void CommandContext::ClearRenderTarget(Texture& color)

@@ -1,6 +1,19 @@
 # Phase 1 plan: render graph v1 and first geometry
 
-**Status:** planned, not implemented.
+**Status:** ✅ implemented. Where the implementation differs from the plan below:
+
+- **Pass API:** `RenderGraph::AddPass(name, setup, execute)` has no `PassData` template. Handles are plain indices,
+  so execute lambdas capture them by value. Passes expose `AddToGraph(...)` rather than `Draw(...)`.
+- **Equal depth test:** `GraphicsPipelineDesc` gained a `depthFunc` field instead of a `DepthMode::ReadOnlyEqual`
+  value.
+- **Read-only depth:** `Texture` gained a read-only DSV, so passes can depth-test while depth is in DEPTH_READ.
+- **Per-draw data:** `InstanceData` became `DrawData`, with one entry per visible (instance, submesh), because the
+  base color lives on the submesh. `GpuScene` owns the per-frame-slot buffers and the shared `RecordDraws` loop.
+- **Static buffers** stay in COMMON and rely on D3D12 implicit promotion and decay, so `UploadContext` needs no
+  barriers and `Buffer` has no tracked state.
+- **glTF winding:** S4 said "flip winding" and that turned out right. The first implementation skipped the flip, the
+  verification scene caught it, and it was fixed.
+- **Command line:** the frame dump is the `--dump-frame` command-line flag.
 
 **Goal:** render real 3D meshes, with every pass recorded through a render graph.
 

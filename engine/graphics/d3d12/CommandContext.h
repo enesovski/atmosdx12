@@ -5,11 +5,13 @@
 #include "graphics/d3d12/PipelineState.h"
 
 #include <cstdint>
+#include <span>
 #include <type_traits>
 #include <vector>
 
 namespace atmos
 {
+    class Buffer;
     class GraphicsDevice;
     class Texture;
     class UploadAllocator;
@@ -33,7 +35,9 @@ namespace atmos
         void Transition(Texture& texture, D3D12_RESOURCE_STATES newState);
         void FlushBarriers();
 
-        // Transitions the targets and sets viewport/scissor to the color target's size.
+        // Transitions the targets and sets viewport/scissor to the first target's size.
+        // A read-only depth target is bound for testing only (DEPTH_READ + read-only DSV).
+        void SetRenderTargets(std::span<Texture* const> colors, Texture* depth, bool readOnlyDepth = false);
         void SetRenderTarget(Texture& color, Texture* depth = nullptr);
         void ClearRenderTarget(Texture& color);
         void ClearDepth(Texture& depth);
@@ -69,7 +73,10 @@ namespace atmos
         void SetConstantBuffer(RootSlot slot, D3D12_GPU_VIRTUAL_ADDRESS address);
         void SetGlobalConstantBuffer(RootSlot slot, D3D12_GPU_VIRTUAL_ADDRESS address);
 
+        void SetIndexBuffer(const Buffer& indices);  // 32-bit indices
+
         void Draw(uint32_t vertexCount, uint32_t instanceCount = 1);
+        void DrawIndexed(uint32_t indexCount, uint32_t startIndex = 0, uint32_t instanceCount = 1);
         void DrawFullscreenTriangle() { Draw(3); }
         void Dispatch(uint32_t groupCountX, uint32_t groupCountY = 1, uint32_t groupCountZ = 1);
 

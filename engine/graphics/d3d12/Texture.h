@@ -42,7 +42,7 @@ namespace atmos
     };
 
     // 2D GPU texture with the views its usage needs and its tracked resource state.
-    // Move-only; destroying it frees its descriptors, so the GPU must be done with it.
+    // Move-only; destruction goes through the device's DeferredReleaseQueue.
     class Texture
     {
     public:
@@ -72,7 +72,8 @@ namespace atmos
         uint32_t GetUavIndex() const;
 
         D3D12_CPU_DESCRIPTOR_HANDLE GetRtv() const;
-        D3D12_CPU_DESCRIPTOR_HANDLE GetDsv() const;
+        // Read-only DSVs allow depth testing while the texture is in DEPTH_READ.
+        D3D12_CPU_DESCRIPTOR_HANDLE GetDsv(bool readOnly = false) const;
 
     private:
         friend class CommandContext;  // Sole owner of state transitions.
@@ -89,5 +90,6 @@ namespace atmos
         Descriptor uav_;
         Descriptor rtv_;
         Descriptor dsv_;
+        Descriptor readOnlyDsv_;
     };
 }

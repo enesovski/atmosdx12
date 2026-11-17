@@ -4,9 +4,12 @@
 
 #include <cmath>
 #include <numbers>
+#include <vector>
 
 namespace atmos
 {
+    class Mesh;
+
     struct SkyEnvironment
     {
         // Azimuth turns from +Z toward +X; elevation is above the horizon.
@@ -30,11 +33,19 @@ namespace atmos
         float exposure = 1.0f;
     };
 
-    // The renderer-facing description of the world. It will grow render proxies
-    // (meshes, lights, materials) as the engine gains geometry.
+    // One placed mesh. The mesh is owned elsewhere and must outlive the scene's use of it.
+    struct MeshInstance
+    {
+        const Mesh* mesh = nullptr;
+        DirectX::XMFLOAT4X4 world{};
+    };
+
+    // The renderer-facing description of the world: flat arrays of render proxies.
+    // Phase 2 adds a gameplay Scene that fills this each frame.
     struct RenderScene
     {
         SkyEnvironment sky;
         PostProcessSettings postProcess;
+        std::vector<MeshInstance> meshInstances;
     };
 }

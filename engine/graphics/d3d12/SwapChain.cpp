@@ -45,6 +45,8 @@ namespace atmos
         for (Texture& backBuffer : backBuffers_)
             backBuffer = Texture();
 
+        device_.GetReleaseQueue().ReleaseAll();
+
         ThrowIfFailed(swapChain_->ResizeBuffers(GraphicsConfig::BackBufferCount, width, height,
                                                 GraphicsConfig::BackBufferFormat, 0),
                       "Failed to resize swap chain");

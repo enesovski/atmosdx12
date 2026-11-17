@@ -1,4 +1,5 @@
 #include "graphics/d3d12/FrameScheduler.h"
+#include "graphics/d3d12/DeferredReleaseQueue.h"
 #include "graphics/d3d12/GraphicsDevice.h"
 
 #include <format>
@@ -12,8 +13,10 @@ namespace atmos
     }
 
     FrameScheduler::FrameScheduler(GraphicsDevice& device)
-        : queue_(device.GetGraphicsQueue())
+        : queue_(device.GetGraphicsQueue()), releaseQueue_(device.GetReleaseQueue())
     {
+        releaseQueue_.SetPendingFenceValue(nextFenceValue_);
+
         ID3D12Device* nativeDevice = device.GetNativeDevice();
 
         for (uint32_t i = 0; i < slots_.size(); ++i)
@@ -45,6 +48,7 @@ namespace atmos
     {
         FrameSlot& slot = slots_[slotIndex_];
         WaitForFence(slot.fenceValue);
+        releaseQueue_.ReleaseCompleted(fence_->GetCompletedValue());
 
         ThrowIfFailed(slot.commandAllocator->Reset(), "Failed to reset command allocator");
         ThrowIfFailed(commandList_->Reset(slot.commandAllocator.Get(), nullptr),
@@ -71,12 +75,16 @@ namespace atmos
     {
         // A fresh signal also covers work submitted before a failed Present.
         WaitForFence(Signal());
+        releaseQueue_.ReleaseCompleted(fence_->GetCompletedValue());
     }
 
     uint64_t FrameScheduler::Signal()
     {
         const uint64_t value = nextFenceValue_++;
         ThrowIfFailed(queue_->Signal(fence_.Get(), value), "Failed to signal fence");
+
+        // Anything released from now on must wait for the next signal.
+        releaseQueue_.SetPendingFenceValue(nextFenceValue_);
         return value;
     }
 

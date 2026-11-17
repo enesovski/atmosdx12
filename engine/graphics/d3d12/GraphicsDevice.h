@@ -1,6 +1,7 @@
 #pragma once
 
 #include "graphics/d3d12/D3D12Utils.h"
+#include "graphics/d3d12/DeferredReleaseQueue.h"
 #include "graphics/d3d12/DescriptorHeap.h"
 #include "graphics/d3d12/GraphicsDeviceOptions.h"
 
@@ -27,6 +28,9 @@ namespace atmos
         DescriptorHeap& GetRenderTargetHeap() { return renderTargetHeap_; }
         DescriptorHeap& GetDepthStencilHeap() { return depthStencilHeap_; }
 
+        // Destroyed Textures/Buffers park their resource and descriptors here until the GPU is done.
+        DeferredReleaseQueue& GetReleaseQueue() { return releaseQueue_; }
+
         // Forwards queued debug-layer messages to the log. No-op without the debug layer.
         void LogDebugMessages();
 
@@ -44,6 +48,7 @@ namespace atmos
         DescriptorHeap shaderResourceHeap_;
         DescriptorHeap renderTargetHeap_;
         DescriptorHeap depthStencilHeap_;
+        DeferredReleaseQueue releaseQueue_;  // After the heaps: destroyed before them.
         ComPtr<ID3D12RootSignature> bindlessRootSignature_;
         ComPtr<ID3D12InfoQueue> infoQueue_;
     };

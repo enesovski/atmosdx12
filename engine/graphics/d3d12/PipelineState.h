@@ -31,7 +31,7 @@ namespace atmos
         Front,
     };
 
-    // Depth tests use GREATER_EQUAL because the engine renders with reverse-Z.
+    // Reverse-Z: nearer is greater, so the default depth test is GREATER_EQUAL.
     enum class DepthMode
     {
         Disabled,
@@ -50,6 +50,7 @@ namespace atmos
         BlendMode blendMode = BlendMode::Opaque;
         CullMode cullMode = CullMode::None;
         DepthMode depthMode = DepthMode::Disabled;
+        D3D12_COMPARISON_FUNC depthFunc = D3D12_COMPARISON_FUNC_GREATER_EQUAL;
         D3D12_PRIMITIVE_TOPOLOGY_TYPE topology = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     };
 

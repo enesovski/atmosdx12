@@ -14,6 +14,7 @@ namespace atmos
         void SetPosition(const DirectX::XMFLOAT3& position) { position_ = position; }
         const DirectX::XMFLOAT3& GetPosition() const { return position_; }
         DirectX::XMFLOAT3 GetForward() const;
+        DirectX::XMFLOAT3 GetRight() const;
 
         DirectX::XMMATRIX GetViewMatrix() const;
 

@@ -1,22 +1,22 @@
 #pragma once
 
 #include "graphics/d3d12/PipelineState.h"
+#include "graphics/rendergraph/RenderGraph.h"
 
 namespace atmos
 {
-    class CommandContext;
     class GraphicsDevice;
     class ShaderCompiler;
-    class Texture;
     struct SkyEnvironment;
 
-    // Fullscreen procedural sky with sun disk and glow, written to an HDR target.
+    // Fullscreen procedural sky with sun disk and glow. Drawn after opaque geometry on the
+    // reverse-Z far plane, so the depth test leaves only pixels no geometry covered.
     class SkyPass
     {
     public:
-        SkyPass(const GraphicsDevice& device, const ShaderCompiler& compiler, DXGI_FORMAT outputFormat);
+        SkyPass(const GraphicsDevice& device, const ShaderCompiler& compiler);
 
-        void Record(CommandContext& context, Texture& output, const SkyEnvironment& sky) const;
+        void AddToGraph(RenderGraph& graph, const SkyEnvironment& sky, RGTexture depth, RGTexture sceneColor) const;
 
     private:
         PipelineState pipeline_;

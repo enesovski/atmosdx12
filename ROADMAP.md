@@ -10,7 +10,7 @@ hold.
 | Phase | Topic | Status |
 |---|---|---|
 | 0 | Foundation refactor | ✅ done |
-| 1 | Render graph v1 and first geometry | planned: [docs/phase-1-plan.md](docs/phase-1-plan.md) |
+| 1 | Render graph v1 and first geometry | ✅ done ([plan and decisions](docs/phase-1-plan.md)) |
 | 2 | Scene, assets, and materials | |
 | 3 | Lighting and shadows (deferred + clustered) | |
 | 4 | Physically based atmosphere and post-processing | |
@@ -78,7 +78,16 @@ works, and GPU-based validation reports nothing.
 
 ---
 
-## Phase 1: render graph v1 and first geometry
+## Phase 1: render graph v1 and first geometry ✅ done
+
+**Verification:**
+
+- The default scene and a test glTF (node hierarchy, rotation, scale, and an instance behind the camera that is
+  culled) render correctly.
+- With an empty scene, the sky is pixel-identical to Phase 0.
+- A pass with an unused output is culled, and its texture is never allocated.
+- Resize, minimize, and maximize are clean under `--gpu-validation`.
+- Debug and Release build warning-free.
 
 The full plan, with each decision's alternatives and the engines that use them, is in
 [docs/phase-1-plan.md](docs/phase-1-plan.md).

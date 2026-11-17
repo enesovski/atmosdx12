@@ -72,13 +72,13 @@ namespace atmos
             return desc;
         }
 
-        D3D12_DEPTH_STENCIL_DESC MakeDepthStencilDesc(DepthMode mode)
+        D3D12_DEPTH_STENCIL_DESC MakeDepthStencilDesc(DepthMode mode, D3D12_COMPARISON_FUNC func)
         {
             D3D12_DEPTH_STENCIL_DESC desc{};
             desc.DepthEnable = mode != DepthMode::Disabled;
             desc.DepthWriteMask = mode == DepthMode::ReadWrite ? D3D12_DEPTH_WRITE_MASK_ALL
                                                                : D3D12_DEPTH_WRITE_MASK_ZERO;
-            desc.DepthFunc = D3D12_COMPARISON_FUNC_GREATER_EQUAL;
+            desc.DepthFunc = func;
             return desc;
         }
 
@@ -112,7 +112,7 @@ namespace atmos
         nativeDesc.BlendState = MakeBlendDesc(desc.blendMode);
         nativeDesc.SampleMask = std::numeric_limits<UINT>::max();
         nativeDesc.RasterizerState = MakeRasterizerDesc(desc.cullMode);
-        nativeDesc.DepthStencilState = MakeDepthStencilDesc(desc.depthMode);
+        nativeDesc.DepthStencilState = MakeDepthStencilDesc(desc.depthMode, desc.depthFunc);
         nativeDesc.PrimitiveTopologyType = desc.topology;
         nativeDesc.NumRenderTargets = static_cast<UINT>(desc.renderTargetFormats.size());
         nativeDesc.DSVFormat = desc.depthFormat;

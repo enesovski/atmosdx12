@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
+
 namespace atmos
 {
     struct MouseDelta
@@ -9,6 +12,7 @@ namespace atmos
     };
 
     // Accumulates window input between frames; the app consumes it once per frame.
+    // Keys use Win32 virtual-key codes ('W', VK_SHIFT, ...).
     class Input
     {
     public:
@@ -34,6 +38,21 @@ namespace atmos
 
         void AddWheelSteps(float steps) { wheelSteps_ += steps; }
 
+        void SetKeyDown(uint32_t key, bool down)
+        {
+            if (key < keys_.size())
+                keys_[key] = down;
+        }
+
+        bool IsKeyDown(uint32_t key) const { return key < keys_.size() && keys_[key]; }
+
+        // Focus loss means key-up messages may never arrive.
+        void ReleaseAllKeys()
+        {
+            keys_.fill(false);
+            looking_ = false;
+        }
+
         MouseDelta ConsumeLookDelta()
         {
             const MouseDelta delta = lookDelta_;
@@ -49,6 +68,7 @@ namespace atmos
         }
 
     private:
+        std::array<bool, 256> keys_{};
         bool looking_ = false;
         int lastX_ = 0;
         int lastY_ = 0;

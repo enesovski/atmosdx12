@@ -11,11 +11,12 @@
 
 namespace atmos
 {
+    class DeferredReleaseQueue;
     class GraphicsDevice;
 
     // Rotates FramesInFlight frame slots. Each slot owns a command allocator and the fence
     // value that guards it; anything else indexed by the slot (e.g. upload memory) shares
-    // that guarantee.
+    // that guarantee. It also drives the device's DeferredReleaseQueue with the same fence.
     class FrameScheduler
     {
     public:
@@ -44,6 +45,7 @@ namespace atmos
         void WaitForFence(uint64_t value);
 
         ID3D12CommandQueue* queue_;
+        DeferredReleaseQueue& releaseQueue_;
         std::array<FrameSlot, GraphicsConfig::FramesInFlight> slots_;
         ComPtr<ID3D12GraphicsCommandList> commandList_;
         ComPtr<ID3D12Fence> fence_;

@@ -2,6 +2,7 @@ add_library(AtmosEngine STATIC
     core/Assert.h
     core/Assert.cpp
     core/Build.h
+    core/FrameTimer.h
     core/Log.h
     core/Log.cpp
     core/StringUtils.h
@@ -16,12 +17,22 @@ add_library(AtmosEngine STATIC
     scene/Camera.h
     scene/Camera.cpp
 
+    assets/CgltfImplementation.cpp
+    assets/GltfLoader.h
+    assets/GltfLoader.cpp
+    assets/PrimitiveMeshes.h
+    assets/PrimitiveMeshes.cpp
+
     graphics/d3d12/BindlessRootSignature.h
     graphics/d3d12/BindlessRootSignature.cpp
+    graphics/d3d12/Buffer.h
+    graphics/d3d12/Buffer.cpp
     graphics/d3d12/CommandContext.h
     graphics/d3d12/CommandContext.cpp
     graphics/d3d12/D3D12Utils.h
     graphics/d3d12/D3D12Utils.cpp
+    graphics/d3d12/DeferredReleaseQueue.h
+    graphics/d3d12/DeferredReleaseQueue.cpp
     graphics/d3d12/DescriptorHeap.h
     graphics/d3d12/DescriptorHeap.cpp
     graphics/d3d12/FrameScheduler.h
@@ -40,12 +51,30 @@ add_library(AtmosEngine STATIC
     graphics/d3d12/Texture.cpp
     graphics/d3d12/UploadAllocator.h
     graphics/d3d12/UploadAllocator.cpp
+    graphics/d3d12/UploadContext.h
+    graphics/d3d12/UploadContext.cpp
 
+    graphics/rendergraph/RenderGraph.h
+    graphics/rendergraph/RenderGraph.cpp
+    graphics/rendergraph/TexturePool.h
+    graphics/rendergraph/TexturePool.cpp
+
+    graphics/passes/DepthPrepass.h
+    graphics/passes/DepthPrepass.cpp
+    graphics/passes/OpaquePass.h
+    graphics/passes/OpaquePass.cpp
     graphics/passes/SkyPass.h
     graphics/passes/SkyPass.cpp
     graphics/passes/TonemapPass.h
     graphics/passes/TonemapPass.cpp
 
+    graphics/Frustum.h
+    graphics/Frustum.cpp
+    graphics/GpuScene.h
+    graphics/GpuScene.cpp
+    graphics/Mesh.h
+    graphics/Mesh.cpp
+    graphics/MeshData.h
     graphics/RenderScene.h
     graphics/RenderView.h
     graphics/RenderView.cpp
@@ -66,6 +95,18 @@ target_compile_definitions(AtmosEngine PUBLIC
 if(MSVC)
     target_compile_options(AtmosEngine PRIVATE /W4 /permissive- /utf-8)
 endif()
+
+# Third-party code is fetched at configure time, pinned to a release tag.
+# SOURCE_SUBDIR points nowhere so only the sources are downloaded (cgltf is one header).
+include(FetchContent)
+FetchContent_Declare(cgltf
+    GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
+    GIT_TAG v1.15
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR do-not-add-subdirectory
+)
+FetchContent_MakeAvailable(cgltf)
+target_include_directories(AtmosEngine SYSTEM PRIVATE ${cgltf_SOURCE_DIR})
 
 target_link_libraries(AtmosEngine PUBLIC
     d3d12

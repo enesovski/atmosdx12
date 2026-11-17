@@ -140,6 +140,7 @@ namespace atmos
             uav_ = std::exchange(other.uav_, {});
             rtv_ = std::exchange(other.rtv_, {});
             dsv_ = std::exchange(other.dsv_, {});
+            readOnlyDsv_ = std::exchange(other.readOnlyDsv_, {});
         }
 
         return *this;
@@ -163,10 +164,10 @@ namespace atmos
         return rtv_.cpu;
     }
 
-    D3D12_CPU_DESCRIPTOR_HANDLE Texture::GetDsv() const
+    D3D12_CPU_DESCRIPTOR_HANDLE Texture::GetDsv(bool readOnly) const
     {
         ATMOS_ASSERT(dsv_.IsValid(), "Texture has no DepthStencil usage");
-        return dsv_.cpu;
+        return readOnly ? readOnlyDsv_.cpu : dsv_.cpu;
     }
 
     void Texture::CreateViews()
@@ -209,6 +210,10 @@ namespace atmos
 
             dsv_ = device_->GetDepthStencilHeap().Allocate();
             device->CreateDepthStencilView(resource_.Get(), &viewDesc, dsv_.cpu);
+
+            viewDesc.Flags = D3D12_DSV_FLAG_READ_ONLY_DEPTH;
+            readOnlyDsv_ = device_->GetDepthStencilHeap().Allocate();
+            device->CreateDepthStencilView(resource_.Get(), &viewDesc, readOnlyDsv_.cpu);
         }
     }
 
@@ -216,10 +221,13 @@ namespace atmos
     {
         if (device_)
         {
-            device_->GetShaderResourceHeap().Free(srv_);
-            device_->GetShaderResourceHeap().Free(uav_);
-            device_->GetRenderTargetHeap().Free(rtv_);
-            device_->GetDepthStencilHeap().Free(dsv_);
+            DeferredReleaseQueue& queue = device_->GetReleaseQueue();
+            queue.Release(device_->GetShaderResourceHeap(), srv_);
+            queue.Release(device_->GetShaderResourceHeap(), uav_);
+            queue.Release(device_->GetRenderTargetHeap(), rtv_);
+            queue.Release(device_->GetDepthStencilHeap(), dsv_);
+            queue.Release(device_->GetDepthStencilHeap(), readOnlyDsv_);
+            queue.Release(std::move(resource_));
         }
 
         resource_.Reset();

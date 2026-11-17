@@ -151,9 +151,16 @@ namespace atmos
                 return 0;
             }
 
+            case WM_KEYDOWN:
+            case WM_KEYUP:
+            {
+                input_.SetKeyDown(static_cast<uint32_t>(wParam), message == WM_KEYDOWN);
+                return 0;
+            }
+
             case WM_KILLFOCUS:
             {
-                input_.EndLook();
+                input_.ReleaseAllKeys();
 
                 if (GetCapture() == window)
                     ReleaseCapture();

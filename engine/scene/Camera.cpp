@@ -33,6 +33,13 @@ namespace atmos
         return { cosPitch * std::sin(yaw), std::sin(pitch), cosPitch * std::cos(yaw) };
     }
 
+    XMFLOAT3 Camera::GetRight() const
+    {
+        // cross(worldUp, forward), which never tilts because the camera has no roll.
+        const float yaw = yawDegrees_ * DegreesToRadians;
+        return { std::cos(yaw), 0.0f, -std::sin(yaw) };
+    }
+
     XMMATRIX Camera::GetViewMatrix() const
     {
         const XMFLOAT3 forward = GetForward();

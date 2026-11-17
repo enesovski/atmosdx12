@@ -1,13 +1,12 @@
 #pragma once
 
 #include "graphics/d3d12/PipelineState.h"
+#include "graphics/rendergraph/RenderGraph.h"
 
 namespace atmos
 {
-    class CommandContext;
     class GraphicsDevice;
     class ShaderCompiler;
-    class Texture;
     struct PostProcessSettings;
 
     // Exposure + tone curve + sRGB encode from the HDR scene color to a display target.
@@ -16,8 +15,8 @@ namespace atmos
     public:
         TonemapPass(const GraphicsDevice& device, const ShaderCompiler& compiler, DXGI_FORMAT outputFormat);
 
-        void Record(CommandContext& context, Texture& hdrInput, Texture& output,
-                    const PostProcessSettings& settings) const;
+        void AddToGraph(RenderGraph& graph, const PostProcessSettings& settings, RGTexture sceneColor,
+                        RGTexture output) const;
 
     private:
         PipelineState pipeline_;
