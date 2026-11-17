@@ -1,55 +1,47 @@
 # AtmosDX12
 
-A lightweight atmospheric renderer built with **C++20, Direct3D 12, and HLSL**.
+A real-time render engine in development, built with **C++20, Direct3D 12 and HLSL (SM 6.6)**.
 
-The current renderer draws a stylized sky gradient with a sun disk, glow, and
-horizon/twilight colors driven by sun elevation. It is a specialized renderer,
-with no time simulation or control UI.
+Today it renders a procedural sky with a sun disk into an HDR target and tonemaps it to the
+screen. Underneath is the engine foundation: a bindless resource model, a DXC shader pipeline,
+per-frame upload memory, tracked resource states and debug tooling. Geometry, materials,
+lighting and a physically based atmosphere come next. See [ROADMAP.md](ROADMAP.md).
 
 ## Requirements
 
-- Windows 10/11 and a Direct3D 12-capable hardware GPU
-- Visual Studio C++ Build Tools (MSVC) and Windows SDK
-- CMake 3.21 or newer
+- Windows 10/11 and a GPU and driver with **Shader Model 6.6** and **resource binding tier 3**
+  (NVIDIA Turing+, AMD RDNA+, Intel Xe+)
+- Visual Studio 2022+ C++ tools and Windows SDK 10.0.22621 or newer (DXC ships with it)
+- CMake 3.24 or newer
+- Optional: the Windows "Graphics Tools" feature, for the D3D12 debug layer
 
 ## Build and run
-
-From a **Developer PowerShell for Visual Studio** shell:
 
 ```powershell
 cmake -S . -B build -A x64
 cmake --build build --config Debug
-.\build\Debug\AtmosDX12.exe
+.\build\app\Debug\AtmosDX12.exe
 ```
 
-The executable prints the selected GPU and opens a fixed 1280x720 window.
-Hold the right mouse button to look around and use the mouse wheel to adjust FOV.
-Minimizing suspends rendering until another window message arrives.
+- Hold the right mouse button to look around; use the mouse wheel to change the FOV.
+- The window can be resized; minimizing pauses rendering.
+- `--gpu-validation` enables D3D12 GPU-based validation (slow).
+- Debug builds enable the D3D12 debug layer and DRED. Debug-layer messages are printed to
+  the console.
 
-Set `sunAzimuthDegrees`, `sunElevationDegrees`, and `sunIntensity` in
-`src/scene/SkySettings.h` to change the default sky. +Y is up; azimuth zero points
-along +Z, increasing toward +X. Elevation is measured above the horizon.
-The defaults approximate the former initial sun position.
+Shaders live in `engine/shaders`. Each build copies them next to the executable, and they
+compile with DXC at startup.
 
-Shaders are copied beside the executable and resolved relative to it, so the
-program can be launched from any working directory. They compile at startup
-with Shader Model 5.1; Debug enables shader debug information and disables
-optimization. CMake builds C++ and copies HLSL; it does not compile HLSL.
+## Layout
 
-The renderer consumes camera-only `RenderView` data and separate `SkySettings`.
-Passes live in `src/graphics/passes`; reusable Direct3D 12 infrastructure lives
-in `src/graphics/d3d12`. Rendering order is explicit and GPU frame-slot
-synchronization is retained.
+```text
+engine/     AtmosEngine static library (core, platform, scene, graphics, shaders)
+app/        AtmosDX12 executable: window, camera input, and the scene it renders
+```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and frame synchronization.
-
-## Future direction
-
-Geometry rendering, HDR, volumetric fog, volumetric clouds, and post-processing
-are future work. The current code contains only the infrastructure and sky pass
-it uses today; it is not a general-purpose game engine.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how the engine is structured.
 
 ## References
 
 - [Direct3D 12 documentation](https://learn.microsoft.com/en-us/windows/win32/direct3d12/direct3d-12-graphics)
-- [Microsoft D3D12 samples](https://github.com/microsoft/DirectX-Graphics-Samples/tree/master/Samples/Desktop/D3D12HelloWorld)
+- [HLSL Shader Model 6.6 dynamic resources](https://microsoft.github.io/DirectX-Specs/d3d/HLSL_SM_6_6_DynamicResources.html)

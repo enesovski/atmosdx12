@@ -1,116 +1,113 @@
 # AtmosDX12 architecture
 
-AtmosDX12 is a specialized atmospheric renderer. The current frame contains one
-sky pass; geometry, HDR, volumetric fog/clouds, and post-processing remain future
-work. There is no RHI, render graph, ECS, material system, or pass registry.
-
-## Ownership and data flow
-
-`Application` owns input, the Win32 `Window`, `Camera`, a `RenderView`, CPU
-`SkySettings`, and `Renderer`. The window borrows input, which outlives it. Each
-loop pumps events, updates the camera, copies its basis into the view, and invokes
-`Renderer::Render(view, skySettings)`. Application knows no GPU constant layout or
-D3D12 commands. The control UI and simulation clock have been removed. Minimizing
-suspends rendering with `WaitMessage`.
-
-`RenderView` is camera basis/projection plus viewport dimensions. It reuses the
-existing `CameraBasis` value and contains no environment or GPU-layout data. The
-caller supplies positive viewport dimensions matching the render target; the
-current window/swapchain remains fixed at 1280x720. Resize support is outside the
-current implementation. `Camera` remains independent of D3D12.
-
-`SkySettings` contains only sun azimuth/elevation in degrees and intensity.
-`CalculateSunDirection` returns a unit vector with +Y up and azimuth measured from
-+Z toward +X, matching camera yaw. Defaults approximate the former initial sun
-position. `SkyPass` converts these settings into shader constants. Twilight colors
-depend on sun height; no time simulation is involved.
-
-`Renderer` owns these concrete components in dependency order:
-
-- `D3D12Context`: DXGI factory, hardware adapter, device, and direct queue.
-- `SwapChain`: two RGBA8 flip-discard buffers and their RTV heap; vsynced present.
-- `FrameScheduler`: two command allocators, one command list, fence, and event.
-  Its queue pointer borrows the context's longer-lived queue.
-- `SkyPass`: its graphics pipeline and a persistently mapped `UploadBuffer` with
-  two 256-byte-aligned constant slots.
-
-`Renderer` prepares render targets and invokes passes in explicit order. It does
-not calculate sky lighting or pack sky constants. `SkyPass` owns only sky pipeline
-configuration, GPU constants, and draw commands; it has no stored viewport size,
-input, UI, presentation, or synchronization responsibility.
-
-## Source organization
+## Modules and dependencies
 
 ```text
-src/
-  Application.h/.cpp
-  main.cpp
-  input/Input.h
-  platform/Window.h/.cpp
-  scene/Camera.h/.cpp
-  scene/SkySettings.h
-  graphics/
-    RenderView.h
-    Renderer.h/.cpp
-    passes/SkyPass.h/.cpp
-    d3d12/
-      D3D12Context.h/.cpp
-      SwapChain.h/.cpp
-      FrameScheduler.h/.cpp
-      UploadBuffer.h
-      GraphicsConfig.h
-      DxError.h
-      GraphicsPipeline.h/.cpp
-      ShaderCompiler.h/.cpp
-shaders/Sky.hlsl
+app/ (AtmosDX12.exe)           Application: window loop, camera input, owns the RenderScene
+   │ links
+engine/ (AtmosEngine.lib)
+   graphics/                    Renderer, RenderScene, RenderView, ShaderInterop
+   graphics/passes/             SkyPass, TonemapPass
+   graphics/d3d12/              Thin D3D12 layer: device, heaps, textures, pipelines, commands
+   scene/                       Camera (gameplay-side, no GPU types)
+   platform/                    Window, Input, Paths (Win32)
+   core/                        Log, Assert, Build flags, string helpers
+   shaders/                     HLSL, compiled at runtime by DXC
 ```
 
-Dependencies flow from application coordination to rendering, then to passes and
-D3D12 infrastructure. Scene camera/settings are CPU-side values. D3D12
-infrastructure has no dependency on Application, Renderer, passes, or scene data.
+Dependencies only point downward: `d3d12/` knows nothing about passes, the renderer or the
+scene, and `scene/`, `platform/` and `core/` know nothing about graphics. The app talks
+to the engine only through `Renderer`, `RenderScene`, `RenderView`, `Camera`, `Window` and
+`Input`.
 
-`GraphicsPipeline` creates and owns a root signature and PSO and binds them. It
-accepts native `D3D12_ROOT_SIGNATURE_DESC` and `D3D12_GRAPHICS_PIPELINE_STATE_DESC`
-values, so shader bytecode, input layout, depth, blending, culling, and render
-target formats remain explicit caller choices. It supplies its owned root
-signature to the PSO description. Descriptor pointers/bytecode only need to remain
-valid during construction; no descriptors or compiler blobs are retained.
-`SkyPass` configures its fullscreen, opaque, unculled, depth-disabled pipeline and
-owns it directly by value.
+## Ownership
 
-`ShaderCompiler::Compile` is a small utility around `D3DCompileFromFile`, preserving
-standard include handling, strictness, diagnostics, and Debug flags. SkyPass
-selects VSMain/vs_5_1 and PSMain/ps_5_1. Renderer resolves the shader path relative
-to the executable, independent of the working directory. CMake copies HLSL;
-compilation happens at startup rather than during the C++ build.
+```text
+Application
+├── Input, Window, Camera, RenderScene
+└── Renderer
+    ├── GraphicsDevice      factory, adapter, device, graphics queue,
+    │                       3 DescriptorHeaps, bindless root signature, info queue
+    ├── SwapChain           back buffers as Textures
+    ├── FrameScheduler      per-slot allocators + fence, one command list
+    ├── UploadAllocator     per-frame linear upload memory
+    ├── CommandContext      barrier batching, root binding, draw/dispatch
+    ├── ShaderCompiler      DXC
+    ├── Texture hdrTarget_  size-dependent; recreated on resize
+    └── SkyPass, TonemapPass (each owns one PipelineState)
+```
 
-## Frame and resource lifetime
+Members are declared in dependency order. `Renderer::~Renderer` flushes the GPU before any
+member is destroyed.
 
-The explicit frame lifecycle in `Renderer::Render` is:
+## Binding model (bindless)
 
-1. `BeginFrame` waits for the selected scheduler slot's previous fence before
-   resetting its allocator/list. This also protects that slot's constants.
-2. Fetch the current DXGI back buffer independently of the scheduler slot.
-3. Transition present to render target; clear and set viewport, scissor, and RTV
-   using the supplied view dimensions.
-4. `SkyPass::Record` writes the safe constant slot, binds pixel-stage b0, and
-   draws a fullscreen triangle using three generated vertices.
-5. Transition to present, close/execute, present, signal the slot's fence, and
-   rotate the scheduler slot.
+There is one root signature for every pipeline (`BindlessRootSignature.h`):
 
-CPU and HLSL sky constants are five float4 values (80 bytes): camera right, up,
-forward, view parameters (aspect and tan-half-FOV), and sun direction/intensity.
-C++ size/offset assertions pin offsets 0, 16, 32, 48, and 64; upload slots retain
-256-byte alignment. View/environment CPU data are separate from this GPU layout.
+| Slot | Register | Contents |
+|---|---|---|
+| `RootConstants` | b0 | Up to 16 dwords per pass or draw, usually bindless indices |
+| `ViewConstants` | b1 | `ViewConstants` CBV, bound once per frame |
+| `PassConstants` | b2 | Optional per-pass CBV for larger data |
+| static samplers | s0–s3 | PointClamp, LinearClamp, LinearWrap, AnisotropicWrap |
 
-There is no unconditional GPU wait at frame end. Allocators and constant slots
-are reused only after their own fence completes. `Renderer` flushes before its
-members are destroyed, so pass resources and back buffers outlive submitted work.
-The flush signals fresh work to cover failures between submission and the usual
-frame signal. Shutdown failures are reported without throwing from the destructor.
-If fence event registration/waiting fails, the scheduler polls to completion (or
-device removal) before reporting the error to preserve resource lifetime.
+Textures and buffers are never bound. A texture's SRV/UAV lives in the single shader-visible
+heap, and shaders fetch it with `ResourceDescriptorHeap[index]`. That index comes from
+`Texture::GetSrvIndex()`, passed through root constants.
 
-Future passes can be explicit Renderer members with explicit record calls. Their
-resources must follow the same frame-slot and shutdown lifetime rules; no generic
-pass abstraction is needed for that extension.
+## Frame lifecycle (`Renderer::Render`)
+
+1. `FrameScheduler::BeginFrame` waits on the current slot's fence and resets its allocator.
+2. `UploadAllocator::BeginFrame` resets that slot's upload region, which the same fence
+   protects.
+3. `CommandContext::Begin` sets the descriptor heap, then the root signatures.
+4. `RecordFrame` binds `ViewConstants` and records the passes:
+   `SkyPass → hdrTarget_`, then `TonemapPass(hdrTarget_) → back buffer`, then a transition to
+   PRESENT.
+5. `End` (flush barriers), `Submit`, `Present`, `EndFrame` (signal the fence and rotate the
+   slot).
+6. Debug-layer messages are forwarded to the log. If the device is lost, DRED data is logged.
+
+## Resource state tracking
+
+Each `Texture` stores its current state. Only `CommandContext` changes it (it is a friend):
+`Transition()` queues a barrier and updates the state. Queued barriers are submitted in one
+batch before the next draw, dispatch or clear. Passes call `SetRenderTarget` (which
+transitions to RT) and `Transition(input, PIXEL_SHADER_RESOURCE)` for what they read. The
+Phase 1 render graph will take over these calls.
+
+## Conventions
+
+- Left-handed, +Y up, camera yaw 0 looks along +Z. Sun azimuth turns from +Z toward +X.
+- Reverse-Z with an infinite far plane: depth 1 is the near plane and 0 is infinity. Depth
+  tests use `GREATER_EQUAL`, and depth clears to 0.
+- Matrices are row-major on both sides (DXC `-Zpr`). HLSL uses `mul(vector, matrix)`, like
+  DirectXMath.
+- Every CPU struct mirrored in HLSL is marked "Mirrors …" on both sides. `ShaderInterop.h`
+  pins `ViewConstants` with `static_assert`.
+- Errors: environment and API failures throw (`ThrowIfFailed` → `DxException` with HRESULT and
+  call site). Programmer errors use `ATMOS_ASSERT` (Debug only).
+- Every D3D12 object gets a debug name. Passes emit PIX/RenderDoc event markers.
+
+## Design decisions (Phase 0)
+
+| Area | Chosen | Alternatives | Who uses what |
+|---|---|---|---|
+| Graphics API layer | D3D12 only, behind thin wrappers (`Texture`, `CommandContext`, …) | Multi-API RHI | Multi-API RHIs: Unreal (RHI), Unity (GfxDevice), bgfx, The Forge, Diligent, NVRHI. We have one target, and a fake abstraction would only slow us down. |
+| Resource binding | Bindless: SM 6.6 `ResourceDescriptorHeap`, one root signature, indices passed in root constants | Per-pass root signatures plus descriptor tables (classic D3D12) | Classic tables: the D3D12 samples and most pre-2020 engines. Bindless: id Tech 7 (Doom Eternal) and The Forge; Unreal 5 has bindless as an option. Bindless is required for material buffers and GPU-driven draws later. |
+| Shader compiler | DXC, SM 6.6, compiled at runtime | FXC (frozen at SM 5.1); Slang; offline compilation | Slang: NVIDIA Falcor. Shipping engines compile offline into caches (Unreal DDC, Unity variants). Runtime compilation now keeps hot reload possible; offline compilation comes in Phase 6. |
+| Command recording | `CommandContext`, with state stored on each `Texture` and barriers batched | Raw command lists with hand-written barriers; render graph | Our design is close to Microsoft's MiniEngine (`CommandContext` + `GpuResource` state). The graph (Phase 1) builds on top of it rather than replacing it. |
+| Per-frame data | One linear upload allocator, one region per frame slot, guarded by that slot's fence | A ring buffer for each pass; per-draw committed buffers | Linear/ring allocators: MiniEngine `LinearAllocator`, Unreal's dynamic/fast allocators. |
+| Depth | Reverse-Z with an infinite far plane, D32F | Standard Z; logarithmic depth | Reverse-Z is standard in Unreal, Unity (D3D/Metal), and Frostbite, and gives the best float precision. |
+| Matrix convention | Row-major and row vectors on CPU and GPU (`-Zpr`, `mul(v, M)`) | Column-major plus transposes on upload | Unreal and DirectXMath use row vectors. GL-heritage code uses column vectors. |
+| Engine packaging | Static library plus app | Engine as a DLL (hot-reloadable modules) | DLL modules: Unreal editor builds. Monolithic: Godot. A static library is simplest until an editor exists. |
+| Error handling | Exceptions for environment and API failures; asserts for bugs | Error codes; exceptions disabled | Most AAA engines (Unreal included) build without exceptions and use checks or asserts. Our exceptions are confined to init and API failures, so switching later is cheap. |
+
+## Known limits (intentional for now)
+
+- **Freed descriptors are reused immediately.** Destroy textures only after a GPU flush, as
+  `Resize` and shutdown do. A deferred-release queue comes in Phase 1.
+- **Single-threaded recording** on one direct queue.
+- **Barriers cover the whole resource**, with no per-subresource or mip tracking.
+- **The renderer has no buffer type, mesh path or static upload path yet.** They arrive with
+  geometry in Phase 1.

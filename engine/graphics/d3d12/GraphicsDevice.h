@@ -1,0 +1,50 @@
+#pragma once
+
+#include "graphics/d3d12/D3D12Utils.h"
+#include "graphics/d3d12/DescriptorHeap.h"
+#include "graphics/d3d12/GraphicsDeviceOptions.h"
+
+#include <dxgi1_6.h>
+
+namespace atmos
+{
+    // Owns the GPU-wide objects every other graphics class builds on: adapter, device,
+    // graphics queue, descriptor heaps and the bindless root signature.
+    class GraphicsDevice
+    {
+    public:
+        explicit GraphicsDevice(const GraphicsDeviceOptions& options);
+
+        GraphicsDevice(const GraphicsDevice&) = delete;
+        GraphicsDevice& operator=(const GraphicsDevice&) = delete;
+
+        IDXGIFactory6* GetFactory() const { return factory_.Get(); }
+        ID3D12Device* GetNativeDevice() const { return device_.Get(); }
+        ID3D12CommandQueue* GetGraphicsQueue() const { return graphicsQueue_.Get(); }
+        ID3D12RootSignature* GetBindlessRootSignature() const { return bindlessRootSignature_.Get(); }
+
+        DescriptorHeap& GetShaderResourceHeap() { return shaderResourceHeap_; }
+        DescriptorHeap& GetRenderTargetHeap() { return renderTargetHeap_; }
+        DescriptorHeap& GetDepthStencilHeap() { return depthStencilHeap_; }
+
+        // Forwards queued debug-layer messages to the log. No-op without the debug layer.
+        void LogDebugMessages();
+
+        // Logs the removal reason plus DRED breadcrumbs and page-fault data if enabled.
+        void LogDeviceRemovedInfo();
+
+    private:
+        void ConfigureInfoQueue();
+
+        // Declaration order is construction order.
+        ComPtr<IDXGIFactory6> factory_;
+        ComPtr<IDXGIAdapter1> adapter_;
+        ComPtr<ID3D12Device> device_;
+        ComPtr<ID3D12CommandQueue> graphicsQueue_;
+        DescriptorHeap shaderResourceHeap_;
+        DescriptorHeap renderTargetHeap_;
+        DescriptorHeap depthStencilHeap_;
+        ComPtr<ID3D12RootSignature> bindlessRootSignature_;
+        ComPtr<ID3D12InfoQueue> infoQueue_;
+    };
+}
