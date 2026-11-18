@@ -11,7 +11,7 @@ namespace atmos
         // Debug names are ignored: any texture with the same shape can be reused.
         bool IsCompatible(const TextureDesc& a, const TextureDesc& b)
         {
-            return a.width == b.width && a.height == b.height && a.format == b.format &&
+            return a.width == b.width && a.height == b.height && a.mipLevels == b.mipLevels && a.format == b.format &&
                    a.usage == b.usage && a.clearColor == b.clearColor && a.clearDepth == b.clearDepth;
         }
     }

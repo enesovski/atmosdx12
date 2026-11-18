@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <numbers>
+#include <span>
 #include <vector>
 
 namespace atmos
@@ -33,15 +34,19 @@ namespace atmos
         float exposure = 1.0f;
     };
 
-    // One placed mesh. The mesh is owned elsewhere and must outlive the scene's use of it.
+    struct Material;
+
+    // One placed mesh. Mesh and materials are owned elsewhere (asset manager) and must outlive
+    // the frame. Each submesh uses materials[submesh.materialIndex].
     struct MeshInstance
     {
         const Mesh* mesh = nullptr;
+        std::span<const Material* const> materials;
         DirectX::XMFLOAT4X4 world{};
     };
 
-    // The renderer-facing description of the world: flat arrays of render proxies.
-    // Phase 2 adds a gameplay Scene that fills this each frame.
+    // The renderer-facing description of the world: flat arrays of render proxies, rebuilt
+    // from the gameplay Scene every frame (see runtime/RenderSceneBuilder).
     struct RenderScene
     {
         SkyEnvironment sky;

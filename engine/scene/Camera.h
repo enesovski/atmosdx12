@@ -11,6 +11,12 @@ namespace atmos
         void Rotate(float yawDeltaDegrees, float pitchDeltaDegrees);
         void AdjustFov(float deltaDegrees);
 
+        void SetRotation(float yawDegrees, float pitchDegrees);
+        void SetFov(float fovDegrees);
+        float GetYawDegrees() const { return yawDegrees_; }
+        float GetPitchDegrees() const { return pitchDegrees_; }
+        float GetFovDegrees() const { return fovDegrees_; }
+
         void SetPosition(const DirectX::XMFLOAT3& position) { position_ = position; }
         const DirectX::XMFLOAT3& GetPosition() const { return position_; }
         DirectX::XMFLOAT3 GetForward() const;

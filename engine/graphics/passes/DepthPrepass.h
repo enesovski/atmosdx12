@@ -1,16 +1,19 @@
 #pragma once
 
+#include "graphics/GpuScene.h"
 #include "graphics/d3d12/PipelineState.h"
 #include "graphics/rendergraph/RenderGraph.h"
 
+#include <array>
+
 namespace atmos
 {
-    class GpuScene;
     class GraphicsDevice;
     class ShaderCompiler;
 
-    // Writes scene depth for all visible meshes (positions only, no pixel shader).
-    // Later passes test against it so every pixel is shaded once.
+    // Writes scene depth for all visible meshes. Opaque buckets use a position-only pipeline
+    // with no pixel shader; masked buckets alpha-test against the base color texture.
+    // Later passes test against this depth so every pixel is shaded once.
     class DepthPrepass
     {
     public:
@@ -19,6 +22,6 @@ namespace atmos
         void AddToGraph(RenderGraph& graph, const GpuScene& scene, RGTexture depth) const;
 
     private:
-        PipelineState pipeline_;
+        std::array<PipelineState, static_cast<size_t>(DrawBucket::Count)> pipelines_;
     };
 }

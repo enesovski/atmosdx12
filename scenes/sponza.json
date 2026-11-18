@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "environment": {
+    "sunAzimuthDegrees": 115.0,
+    "sunElevationDegrees": 60.0,
+    "sunIntensity": 2.5,
+    "exposure": 1.0
+  },
+  "camera": {
+    "position": [-7.5, 2.2, -0.3],
+    "yawDegrees": 90.0,
+    "pitchDegrees": 8.0,
+    "fovDegrees": 65.0
+  },
+  "entities": [
+    {
+      "name": "Sponza",
+      "parent": -1,
+      "position": [0.0, 0.0, 0.0],
+      "rotationDegrees": [0.0, 0.0, 0.0],
+      "scale": [1.0, 1.0, 1.0],
+      "model": "../assets/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf"
+    }
+  ]
+}

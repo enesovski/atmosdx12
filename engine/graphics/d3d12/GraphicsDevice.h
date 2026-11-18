@@ -10,7 +10,7 @@
 namespace atmos
 {
     // Owns the GPU-wide objects every other graphics class builds on: adapter, device,
-    // graphics queue, descriptor heaps and the bindless root signature.
+    // graphics and copy queues, descriptor heaps and the bindless root signature.
     class GraphicsDevice
     {
     public:
@@ -22,6 +22,7 @@ namespace atmos
         IDXGIFactory6* GetFactory() const { return factory_.Get(); }
         ID3D12Device* GetNativeDevice() const { return device_.Get(); }
         ID3D12CommandQueue* GetGraphicsQueue() const { return graphicsQueue_.Get(); }
+        ID3D12CommandQueue* GetCopyQueue() const { return copyQueue_.Get(); }
         ID3D12RootSignature* GetBindlessRootSignature() const { return bindlessRootSignature_.Get(); }
 
         DescriptorHeap& GetShaderResourceHeap() { return shaderResourceHeap_; }
@@ -45,6 +46,7 @@ namespace atmos
         ComPtr<IDXGIAdapter1> adapter_;
         ComPtr<ID3D12Device> device_;
         ComPtr<ID3D12CommandQueue> graphicsQueue_;
+        ComPtr<ID3D12CommandQueue> copyQueue_;
         DescriptorHeap shaderResourceHeap_;
         DescriptorHeap renderTargetHeap_;
         DescriptorHeap depthStencilHeap_;

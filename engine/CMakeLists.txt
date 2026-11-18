@@ -3,10 +3,13 @@ add_library(AtmosEngine STATIC
     core/Assert.cpp
     core/Build.h
     core/FrameTimer.h
+    core/Handle.h
     core/Log.h
     core/Log.cpp
     core/StringUtils.h
     core/StringUtils.cpp
+    core/ThreadPool.h
+    core/ThreadPool.cpp
 
     platform/Input.h
     platform/Paths.h
@@ -16,12 +19,24 @@ add_library(AtmosEngine STATIC
 
     scene/Camera.h
     scene/Camera.cpp
+    scene/Scene.h
+    scene/Scene.cpp
+    scene/SceneSerializer.h
+    scene/SceneSerializer.cpp
 
+    assets/AssetCache.h
+    assets/AssetCache.cpp
     assets/CgltfImplementation.cpp
     assets/GltfLoader.h
     assets/GltfLoader.cpp
+    assets/ModelCooker.h
+    assets/ModelCooker.cpp
+    assets/ModelData.h
     assets/PrimitiveMeshes.h
     assets/PrimitiveMeshes.cpp
+    assets/TextureCooker.h
+    assets/TextureCooker.cpp
+    assets/TextureData.h
 
     graphics/d3d12/BindlessRootSignature.h
     graphics/d3d12/BindlessRootSignature.cpp
@@ -51,8 +66,8 @@ add_library(AtmosEngine STATIC
     graphics/d3d12/Texture.cpp
     graphics/d3d12/UploadAllocator.h
     graphics/d3d12/UploadAllocator.cpp
-    graphics/d3d12/UploadContext.h
-    graphics/d3d12/UploadContext.cpp
+    graphics/d3d12/UploadQueue.h
+    graphics/d3d12/UploadQueue.cpp
 
     graphics/rendergraph/RenderGraph.h
     graphics/rendergraph/RenderGraph.cpp
@@ -72,15 +87,26 @@ add_library(AtmosEngine STATIC
     graphics/Frustum.cpp
     graphics/GpuScene.h
     graphics/GpuScene.cpp
+    graphics/Material.h
+    graphics/MaterialData.h
     graphics/Mesh.h
     graphics/Mesh.cpp
     graphics/MeshData.h
+    graphics/OverlayRenderer.h
     graphics/RenderScene.h
     graphics/RenderView.h
     graphics/RenderView.cpp
     graphics/Renderer.h
     graphics/Renderer.cpp
     graphics/ShaderInterop.h
+
+    runtime/AssetManager.h
+    runtime/AssetManager.cpp
+    runtime/RenderSceneBuilder.h
+    runtime/RenderSceneBuilder.cpp
+
+    ui/DebugUi.h
+    ui/DebugUi.cpp
 )
 
 target_include_directories(AtmosEngine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -96,23 +122,20 @@ if(MSVC)
     target_compile_options(AtmosEngine PRIVATE /W4 /permissive- /utf-8)
 endif()
 
-# Third-party code is fetched at configure time, pinned to a release tag.
-# SOURCE_SUBDIR points nowhere so only the sources are downloaded (cgltf is one header).
-include(FetchContent)
-FetchContent_Declare(cgltf
-    GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
-    GIT_TAG v1.15
-    GIT_SHALLOW TRUE
-    SOURCE_SUBDIR do-not-add-subdirectory
-)
-FetchContent_MakeAvailable(cgltf)
+include(ThirdParty.cmake)
+
 target_include_directories(AtmosEngine SYSTEM PRIVATE ${cgltf_SOURCE_DIR})
 
-target_link_libraries(AtmosEngine PUBLIC
-    d3d12
-    dxgi
-    dxguid
-    dxcompiler
+target_link_libraries(AtmosEngine
+    PUBLIC
+        d3d12
+        dxgi
+        dxguid
+        dxcompiler
+        imgui
+    PRIVATE
+        DirectXTex
+        nlohmann_json::nlohmann_json
 )
 
 # DXC runtime DLLs ship with the Windows SDK and must sit next to the executable.

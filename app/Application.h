@@ -8,22 +8,23 @@
 #include "platform/Input.h"
 #include "platform/Window.h"
 #include "scene/Camera.h"
+#include "scene/Scene.h"
 
 #include <filesystem>
 #include <memory>
-#include <vector>
 
 namespace atmos
 {
-    class Mesh;
+    class AssetManager;
+    class DebugUi;
     class Renderer;
 }
 
 struct AppOptions
 {
     atmos::GraphicsDeviceOptions device;
-    std::filesystem::path scenePath;   // Empty: built-in test scene.
-    bool dumpFrame = false;            // Log the first frame's render graph.
+    std::filesystem::path scenePath;  // .json scene or a single .gltf/.glb; empty: scenes/sponza.json
+    bool dumpFrame = false;           // Log the first frame's render graph.
 };
 
 class Application
@@ -38,20 +39,27 @@ public:
     int Run();
 
 private:
-    void LoadGltfScene(const std::filesystem::path& path);
-    void LoadDefaultScene();
-    void RenderFrame();
+    void LoadScene(const std::filesystem::path& path);
+    void SaveScene();
+    void UpdateCamera(float deltaSeconds);
+    void DrawDebugWindows(float deltaSeconds);
 
     atmos::Input input_;
     atmos::Window window_;
     atmos::Camera camera_;
     FlyCameraController cameraController_;
     atmos::FrameTimer frameTimer_;
-    atmos::RenderScene scene_;
 
-    // Meshes are declared after the renderer so they are destroyed first.
+    atmos::Scene scene_;
+    std::filesystem::path scenePath_;  // where F5 saves; empty for a directly loaded model
+    atmos::RenderScene renderScene_;
+
+    // Declared after the renderer so they are destroyed first.
     std::unique_ptr<atmos::Renderer> renderer_;
-    std::vector<std::unique_ptr<atmos::Mesh>> meshes_;
+    std::unique_ptr<atmos::AssetManager> assets_;
+    std::unique_ptr<atmos::DebugUi> debugUi_;
 
+    bool showDebugUi_ = true;
     bool windowShown_ = false;
+    float smoothedFrameMs_ = 0.0f;
 };

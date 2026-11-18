@@ -13,6 +13,12 @@ namespace atmos
     class RenderGraph;
     class TexturePool;
 
+    struct RenderPassInfo
+    {
+        std::wstring name;
+        bool culled = false;
+    };
+
     // Handle to a texture inside one frame's graph. Cheap to copy and capture.
     struct RGTexture
     {
@@ -95,6 +101,9 @@ namespace atmos
 
         // Logs passes (live or culled), their accesses and the transient textures.
         void LogSummary() const;
+
+        // Valid after Execute().
+        std::vector<RenderPassInfo> GetPassInfos() const;
 
     private:
         friend class RGBuilder;

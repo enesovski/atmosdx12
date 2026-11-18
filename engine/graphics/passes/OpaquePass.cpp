@@ -20,18 +20,18 @@ namespace atmos
             float padding1;
         };
 
-        PipelineState CreatePipeline(const GraphicsDevice& device, const ShaderCompiler& compiler)
+        PipelineState CreatePipeline(const GraphicsDevice& device, const ShaderCompiler& compiler, CullMode cullMode)
         {
             const auto vertexShader = compiler.Compile(L"Mesh.hlsl", L"VSMain", ShaderStage::Vertex);
             const auto pixelShader = compiler.Compile(L"Mesh.hlsl", L"PSMain", ShaderStage::Pixel);
 
             return PipelineState::CreateGraphics(device, {
-                .debugName = L"Opaque",
+                .debugName = cullMode == CullMode::None ? L"Opaque Double-Sided" : L"Opaque",
                 .vertexShader = vertexShader.Get(),
                 .pixelShader = pixelShader.Get(),
                 .renderTargetFormats = { GraphicsConfig::HdrColorFormat },
                 .depthFormat = GraphicsConfig::DepthFormat,
-                .cullMode = CullMode::Back,
+                .cullMode = cullMode,
                 .depthMode = DepthMode::ReadOnly,
                 .depthFunc = D3D12_COMPARISON_FUNC_EQUAL,
             });
@@ -39,7 +39,8 @@ namespace atmos
     }
 
     OpaquePass::OpaquePass(const GraphicsDevice& device, const ShaderCompiler& compiler)
-        : pipeline_(CreatePipeline(device, compiler))
+        : singleSidedPipeline_(CreatePipeline(device, compiler, CullMode::Back)),
+          doubleSidedPipeline_(CreatePipeline(device, compiler, CullMode::None))
     {
     }
 
@@ -59,9 +60,17 @@ namespace atmos
                 builder.WriteColor(sceneColor, LoadOp::Clear);
             },
             [this, &scene, constants](RGContext& context) {
-                context.commands.SetPipeline(pipeline_);
-                context.commands.SetConstantBuffer(RootSlot::PassConstants, constants);
-                scene.RecordDraws(context.commands);
+                CommandContext& commands = context.commands;
+
+                commands.SetPipeline(singleSidedPipeline_);
+                commands.SetConstantBuffer(RootSlot::PassConstants, constants);
+                scene.RecordDraws(commands, DrawBucket::Opaque);
+                scene.RecordDraws(commands, DrawBucket::Masked);
+
+                // Root arguments persist across pipeline changes (same root signature).
+                commands.SetPipeline(doubleSidedPipeline_);
+                scene.RecordDraws(commands, DrawBucket::OpaqueDoubleSided);
+                scene.RecordDraws(commands, DrawBucket::MaskedDoubleSided);
             });
     }
 }

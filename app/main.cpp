@@ -7,9 +7,9 @@
 
 namespace
 {
-    // --gpu-validation   D3D12 GPU-based validation (slow)
-    // --scene <file>     load a .gltf/.glb instead of the built-in test scene
+    // --scene <file>     .json scene or a single .gltf/.glb (default: scenes/sponza.json)
     // --dump-frame       log the first frame's render graph and culling stats
+    // --gpu-validation   D3D12 GPU-based validation (slow)
     AppOptions ParseCommandLine(int argc, char* argv[])
     {
         AppOptions options;

@@ -12,15 +12,15 @@
 namespace atmos
 {
     class GraphicsDevice;
-    class UploadContext;
+    class UploadQueue;
 
     // GPU mesh: separate position and attribute streams (read by vertex pulling), a 32-bit
     // index buffer, the submesh table and local-space bounds for culling.
     class Mesh
     {
     public:
-        // Records uploads; the caller flushes the UploadContext before the mesh is drawn.
-        Mesh(GraphicsDevice& device, UploadContext& uploadContext, const MeshData& data);
+        // Records uploads; the mesh may be drawn once the upload queue completed them.
+        Mesh(GraphicsDevice& device, UploadQueue& uploadQueue, const MeshData& data);
 
         const Buffer& GetPositionBuffer() const { return positions_; }
         const Buffer& GetAttributeBuffer() const { return attributes_; }

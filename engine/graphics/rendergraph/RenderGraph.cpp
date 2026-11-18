@@ -263,6 +263,17 @@ namespace atmos
         pass.execute(context);
     }
 
+    std::vector<RenderPassInfo> RenderGraph::GetPassInfos() const
+    {
+        std::vector<RenderPassInfo> infos;
+        infos.reserve(passes_.size());
+
+        for (const Pass& pass : passes_)
+            infos.push_back({ pass.name, pass.culled });
+
+        return infos;
+    }
+
     void RenderGraph::LogSummary() const
     {
         static constexpr const char* AccessNames[] = { "read", "color", "depth-write", "depth-read", "uav" };

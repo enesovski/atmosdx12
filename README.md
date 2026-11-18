@@ -2,24 +2,40 @@
 
 A real-time render engine in development, built with **C++20, Direct3D 12 and HLSL (SM 6.6)**.
 
-It renders 3D meshes loaded from glTF with a depth prepass, a forward sun-lit opaque pass, a procedural sky and HDR
-tonemapping. Every frame is scheduled by a render graph. Underneath are:
+It loads scenes of glTF models asynchronously, including:
+
+- textures cooked to block-compressed DDS
+- normal maps
+- alpha-tested and double-sided materials
+
+Each frame runs through a render graph: depth prepass, forward opaque pass, procedural sky and HDR tonemapping, with
+an ImGui debug overlay on top. Underneath are:
 
 - a bindless resource model with vertex pulling
 - a DXC shader pipeline
-- per-frame upload memory
+- copy-queue streaming
 - tracked resource states and deferred resource release
-- debug tooling
 
-PBR materials, real lighting and shadows, and a physically based atmosphere come next. See [ROADMAP.md](ROADMAP.md).
+PBR lighting, shadows and a physically based atmosphere come next. See [ROADMAP.md](ROADMAP.md).
 
 ## Requirements
 
 - Windows 10/11 and a GPU and driver with **Shader Model 6.6** and **resource binding tier 3**
   (NVIDIA Turing+, AMD RDNA+, Intel Xe+)
 - Visual Studio 2022+ C++ tools and Windows SDK 10.0.22621 or newer (DXC ships with it)
-- CMake 3.24 or newer; the first configure downloads cgltf from GitHub
+- CMake 3.25 or newer. The first configure downloads cgltf, nlohmann/json, DirectXTex and Dear ImGui from GitHub.
 - Optional: the Windows "Graphics Tools" feature, for the D3D12 debug layer
+
+## Get the Sponza scene
+
+The default scene, `scenes/sponza.json`, expects the Khronos sample assets in `assets/` (git-ignored):
+
+```powershell
+git clone --depth 1 --filter=blob:none --sparse https://github.com/KhronosGroup/glTF-Sample-Assets.git assets/glTF-Sample-Assets
+```
+```powershell
+git -C assets/glTF-Sample-Assets sparse-checkout set Models/Sponza
+```
 
 ## Build and run
 
@@ -29,11 +45,12 @@ cmake --build build --config Debug
 .\build\app\Debug\AtmosDX12.exe
 ```
 
-Without arguments it shows a built-in test scene: a ground plane and a few cubes.
+The first launch cooks Sponza's 69 textures in the background (a few seconds). The scene appears right away, and
+textures pop in as they finish. Later launches load the cooked files from `build\app\<config>\AssetCache`.
 
 | Option | Effect |
 |---|---|
-| `--scene path\to\model.gltf` | Load a glTF 2.0 file (`.gltf` or `.glb`) |
+| `--scene file` | Load a `.json` scene, or a single `.gltf`/`.glb` model |
 | `--dump-frame` | Print the first frame's render graph and culling stats |
 | `--gpu-validation` | D3D12 GPU-based validation (slow) |
 
@@ -44,28 +61,36 @@ Without arguments it shows a built-in test scene: a ground plane and a few cubes
 | Q / E | Down / up |
 | Shift | Move faster |
 | Mouse wheel | Field of view |
+| F1 | Show/hide the debug UI (stats, render graph, asset progress, sun and exposure sliders) |
+| F5 | Save the scene, including the current camera as its start view |
 
-The window can be resized, and minimizing pauses rendering. Debug builds enable the D3D12 debug layer and DRED, and
-print debug-layer messages to the console.
+From Blender, export with **File → Export → glTF 2.0**, then add the file to a scene's `entities` or open it with
+`--scene`.
 
-### Test scenes
+## Scene files
 
-To try a real scene, download **Sponza** from
-[Khronos glTF-Sample-Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza) into
-`assets/`, which git ignores, and run:
-
-```powershell
-.\build\app\Debug\AtmosDX12.exe --scene assets\Sponza\glTF\Sponza.gltf
+```json
+{
+  "version": 1,
+  "environment": { "sunAzimuthDegrees": 115, "sunElevationDegrees": 60, "sunIntensity": 2.5, "exposure": 1 },
+  "camera": { "position": [-7.5, 2.2, -0.3], "yawDegrees": 90, "pitchDegrees": 8, "fovDegrees": 65 },
+  "entities": [
+    { "name": "Sponza", "parent": -1, "position": [0, 0, 0], "rotationDegrees": [0, 0, 0], "scale": [1, 1, 1],
+      "model": "../assets/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf" }
+  ]
+}
 ```
 
-Only geometry and each material's base color are used for now. From Blender, use **File → Export → glTF 2.0**.
+- **Model paths** are relative to the scene file.
+- **`parent`** is an index into `entities`, or -1 for none. A parent must come before its children.
 
 ## Layout
 
 ```text
-engine/     AtmosEngine static library (core, platform, scene, assets, graphics, shaders)
-app/        AtmosDX12 executable: window, fly camera, and the scene it renders
-docs/       Phase plans
+engine/     AtmosEngine static library (core, platform, scene, assets, runtime, graphics, ui, shaders)
+app/        AtmosDX12 executable: window loop, fly camera, debug panels
+scenes/     Scene files
+docs/       Per-phase plans and design decisions
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how the engine is structured.

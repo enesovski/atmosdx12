@@ -116,15 +116,15 @@ namespace atmos
             return device;
         }
 
-        ComPtr<ID3D12CommandQueue> CreateGraphicsQueue(ID3D12Device* device)
+        ComPtr<ID3D12CommandQueue> CreateQueue(ID3D12Device* device, D3D12_COMMAND_LIST_TYPE type,
+                                               const wchar_t* name)
         {
             D3D12_COMMAND_QUEUE_DESC desc{};
-            desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+            desc.Type = type;
 
             ComPtr<ID3D12CommandQueue> queue;
-            ThrowIfFailed(device->CreateCommandQueue(&desc, IID_PPV_ARGS(&queue)),
-                          "Failed to create graphics queue");
-            SetDebugName(queue.Get(), L"Graphics Queue");
+            ThrowIfFailed(device->CreateCommandQueue(&desc, IID_PPV_ARGS(&queue)), "Failed to create command queue");
+            SetDebugName(queue.Get(), name);
             return queue;
         }
     }
@@ -133,7 +133,8 @@ namespace atmos
         : factory_(CreateFactory(options)),
           adapter_(SelectAdapter(factory_.Get())),
           device_(CreateDevice(adapter_.Get())),
-          graphicsQueue_(CreateGraphicsQueue(device_.Get())),
+          graphicsQueue_(CreateQueue(device_.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT, L"Graphics Queue")),
+          copyQueue_(CreateQueue(device_.Get(), D3D12_COMMAND_LIST_TYPE_COPY, L"Copy Queue")),
           shaderResourceHeap_(device_.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
                               GraphicsConfig::ShaderResourceDescriptorCount, true, L"Shader Resource Heap"),
           renderTargetHeap_(device_.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_RTV,

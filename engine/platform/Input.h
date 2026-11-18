@@ -40,16 +40,32 @@ namespace atmos
 
         void SetKeyDown(uint32_t key, bool down)
         {
-            if (key < keys_.size())
-                keys_[key] = down;
+            if (key >= keys_.size())
+                return;
+
+            if (down && !keys_[key])
+                pressed_[key] = true;
+
+            keys_[key] = down;
         }
 
         bool IsKeyDown(uint32_t key) const { return key < keys_.size() && keys_[key]; }
+
+        // True once per physical press (ignores key repeat).
+        bool ConsumeKeyPress(uint32_t key)
+        {
+            if (key >= pressed_.size() || !pressed_[key])
+                return false;
+
+            pressed_[key] = false;
+            return true;
+        }
 
         // Focus loss means key-up messages may never arrive.
         void ReleaseAllKeys()
         {
             keys_.fill(false);
+            pressed_.fill(false);
             looking_ = false;
         }
 
@@ -69,6 +85,7 @@ namespace atmos
 
     private:
         std::array<bool, 256> keys_{};
+        std::array<bool, 256> pressed_{};
         bool looking_ = false;
         int lastX_ = 0;
         int lastY_ = 0;

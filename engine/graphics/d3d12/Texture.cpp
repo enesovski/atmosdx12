@@ -72,7 +72,7 @@ namespace atmos
         resourceDesc.Width = desc.width;
         resourceDesc.Height = desc.height;
         resourceDesc.DepthOrArraySize = 1;
-        resourceDesc.MipLevels = 1;
+        resourceDesc.MipLevels = static_cast<UINT16>(desc.mipLevels);
         resourceDesc.Format = GetResourceFormat(desc);
         resourceDesc.SampleDesc.Count = 1;
         resourceDesc.Flags = GetResourceFlags(desc.usage);
@@ -109,6 +109,7 @@ namespace atmos
         desc_.width = static_cast<uint32_t>(resourceDesc.Width);
         desc_.height = resourceDesc.Height;
         desc_.format = resourceDesc.Format;
+        desc_.mipLevels = resourceDesc.MipLevels;
         desc_.usage = usage;
         desc_.debugName = std::move(debugName);
         SetDebugName(resource_.Get(), desc_.debugName);
@@ -180,7 +181,7 @@ namespace atmos
             viewDesc.Format = GetShaderResourceFormat(desc_.format);
             viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
             viewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-            viewDesc.Texture2D.MipLevels = 1;
+            viewDesc.Texture2D.MipLevels = desc_.mipLevels;
 
             srv_ = device_->GetShaderResourceHeap().Allocate();
             device->CreateShaderResourceView(resource_.Get(), &viewDesc, srv_.cpu);

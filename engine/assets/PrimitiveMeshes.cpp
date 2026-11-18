@@ -27,24 +27,27 @@ namespace atmos
             for (int i = 0; i < 4; ++i)
             {
                 XMFLOAT3 position;
-                XMFLOAT3 normalValue;
+                VertexAttributes attributes{};
                 XMStoreFloat3(&position, corners[i]);
-                XMStoreFloat3(&normalValue, normal);
+                XMStoreFloat3(&attributes.normal, normal);
+                // Tangent follows +u (right); with w = 1, cross(N, T) = -up follows +v (down).
+                XMStoreFloat4(&attributes.tangent, XMVectorSetW(XMVector3Normalize(right), 1.0f));
+                attributes.uv = uvs[i];
 
                 mesh.positions.push_back(position);
-                mesh.attributes.push_back({ normalValue, uvs[i] });
+                mesh.attributes.push_back(attributes);
             }
 
             mesh.indices.insert(mesh.indices.end(), { base, base + 1, base + 2, base, base + 2, base + 3 });
         }
 
-        void FinishSingleSubmesh(MeshData& mesh, const XMFLOAT4& color)
+        void FinishSingleSubmesh(MeshData& mesh)
         {
-            mesh.submeshes.push_back({ 0, static_cast<uint32_t>(mesh.indices.size()), color });
+            mesh.submeshes.push_back({ 0, static_cast<uint32_t>(mesh.indices.size()), 0 });
         }
     }
 
-    MeshData CreateCubeMeshData(const XMFLOAT4& color)
+    MeshData CreateCubeMeshData()
     {
         MeshData mesh;
         mesh.name = "Cube";
@@ -61,18 +64,18 @@ namespace atmos
         for (const auto& face : faces)
             AddQuad(mesh, face[0] * 0.5f, face[0], face[1], 0.5f);
 
-        FinishSingleSubmesh(mesh, color);
+        FinishSingleSubmesh(mesh);
         return mesh;
     }
 
-    MeshData CreatePlaneMeshData(float size, const XMFLOAT4& color)
+    MeshData CreatePlaneMeshData(float size)
     {
         MeshData mesh;
         mesh.name = "Plane";
 
         AddQuad(mesh, XMVectorZero(), XMVectorSet(0, 1, 0, 0), XMVectorSet(0, 0, 1, 0), size * 0.5f);
 
-        FinishSingleSubmesh(mesh, color);
+        FinishSingleSubmesh(mesh);
         return mesh;
     }
 }

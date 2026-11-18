@@ -10,8 +10,9 @@ namespace atmos
     class ShaderCompiler;
     struct SkyEnvironment;
 
-    // Shades visible meshes into scene color with a temporary lambert + sun model.
-    // Depth comes from DepthPrepass and is tested with EQUAL, so there is no overdraw.
+    // Shades visible meshes into scene color: material textures, normal mapping and a temporary
+    // lambert + sun model. Depth comes from DepthPrepass and is tested with EQUAL, so masked
+    // materials need no alpha test here and nothing is shaded twice.
     // Replaced by the deferred GBuffer + lighting passes in Phase 3.
     class OpaquePass
     {
@@ -22,6 +23,7 @@ namespace atmos
                         RGTexture depth, RGTexture sceneColor) const;
 
     private:
-        PipelineState pipeline_;
+        PipelineState singleSidedPipeline_;
+        PipelineState doubleSidedPipeline_;
     };
 }

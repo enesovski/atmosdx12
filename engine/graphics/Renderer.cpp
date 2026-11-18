@@ -1,6 +1,6 @@
 #include "graphics/Renderer.h"
 #include "graphics/Frustum.h"
-#include "graphics/Mesh.h"
+#include "graphics/OverlayRenderer.h"
 #include "graphics/RenderScene.h"
 #include "graphics/RenderView.h"
 #include "graphics/ShaderInterop.h"
@@ -37,7 +37,6 @@ namespace atmos
           uploadAllocator_(device_.GetNativeDevice(), GraphicsConfig::UploadBytesPerFrame,
                            GraphicsConfig::FramesInFlight),
           commandContext_(device_, uploadAllocator_),
-          uploadContext_(device_),
           shaderCompiler_(GetExecutableDirectory() / "shaders"),
           texturePool_(device_),
           gpuScene_(device_),
@@ -71,25 +70,12 @@ namespace atmos
         swapChain_.Resize(width, height);
     }
 
-    std::vector<std::unique_ptr<Mesh>> Renderer::CreateMeshes(std::span<const MeshData> meshes)
+    void Renderer::WaitIdle()
     {
-        std::vector<std::unique_ptr<Mesh>> result;
-        result.reserve(meshes.size());
-
-        for (const MeshData& data : meshes)
-        {
-            if (data.positions.empty() || data.indices.empty())
-                result.push_back(nullptr);
-            else
-                result.push_back(std::make_unique<Mesh>(device_, uploadContext_, data));
-        }
-
-        uploadContext_.Flush();
-        device_.LogDebugMessages();
-        return result;
+        frameScheduler_.Flush();
     }
 
-    void Renderer::Render(const RenderScene& scene, const RenderView& view)
+    void Renderer::Render(const RenderScene& scene, const RenderView& view, IOverlayRenderer* overlay)
     {
         try
         {
@@ -105,15 +91,19 @@ namespace atmos
             gpuScene_.Update(frameIndex, scene, Frustum::FromViewProjection(viewProjection));
 
             RenderGraph graph(texturePool_);
-            BuildFrameGraph(graph, scene);
+            BuildFrameGraph(graph, scene, overlay);
             graph.Execute(commandContext_);
+
+            frameStats_.passes = graph.GetPassInfos();
+            frameStats_.scene = gpuScene_.GetStats();
+            frameStats_.pooledTextures = texturePool_.GetTextureCount();
 
             if (dumpNextFrame_)
             {
-                const GpuSceneStats& stats = gpuScene_.GetStats();
+                const GpuSceneStats& stats = frameStats_.scene;
                 graph.LogSummary();
-                log::Info("Scene: {} instances, {} culled, {} draws, {} pooled textures", stats.instances,
-                          stats.culledInstances, stats.draws, texturePool_.GetTextureCount());
+                log::Info("Scene: {} instances, {} culled, {} draws, {} materials, {} pooled textures", stats.instances,
+                          stats.culledInstances, stats.draws, stats.materials, frameStats_.pooledTextures);
                 dumpNextFrame_ = false;
             }
 
@@ -137,7 +127,7 @@ namespace atmos
         }
     }
 
-    void Renderer::BuildFrameGraph(RenderGraph& graph, const RenderScene& scene)
+    void Renderer::BuildFrameGraph(RenderGraph& graph, const RenderScene& scene, IOverlayRenderer* overlay)
     {
         const uint32_t width = swapChain_.GetWidth();
         const uint32_t height = swapChain_.GetHeight();
@@ -163,5 +153,16 @@ namespace atmos
         opaquePass_.AddToGraph(graph, gpuScene_, scene.sky, depth, sceneColor);
         skyPass_.AddToGraph(graph, scene.sky, depth, sceneColor);
         tonemapPass_.AddToGraph(graph, scene.postProcess, sceneColor, backBuffer);
+
+        if (overlay)
+        {
+            graph.AddPass(L"Overlay",
+                [&](RGBuilder& builder) {
+                    builder.WriteColor(backBuffer, LoadOp::Load);
+                },
+                [overlay](RGContext& context) {
+                    overlay->RecordOverlay(context.commands);
+                });
+        }
     }
 }

@@ -102,6 +102,9 @@ namespace atmos
 
     LRESULT Window::HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
     {
+        if (messageHandler_ && messageHandler_(window, message, wParam, lParam))
+            return TRUE;
+
         switch (message)
         {
             case WM_SIZE:

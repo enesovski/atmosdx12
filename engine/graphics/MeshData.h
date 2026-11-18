@@ -8,25 +8,26 @@
 
 namespace atmos
 {
-    // Mirrors the attribute stream layout read in Mesh.hlsl (20 bytes per vertex).
+    // Mirrors the attribute stream layout read in Mesh.hlsl (36 bytes per vertex).
     struct VertexAttributes
     {
         DirectX::XMFLOAT3 normal;
+        DirectX::XMFLOAT4 tangent;  // xyz tangent, w bitangent sign: B = cross(N, T) * w
         DirectX::XMFLOAT2 uv;
     };
 
-    static_assert(sizeof(VertexAttributes) == 20);
+    static_assert(sizeof(VertexAttributes) == 36);
 
     // A range of the index buffer drawn with one material.
     struct Submesh
     {
         uint32_t indexOffset = 0;
         uint32_t indexCount = 0;
-        DirectX::XMFLOAT4 baseColor{ 1.0f, 1.0f, 1.0f, 1.0f };  // Linear RGB; textures come in Phase 2.
+        uint32_t materialIndex = 0;  // Into the owning model's material list.
     };
 
     // CPU-side geometry in engine space (left-handed, +Y up, clockwise front faces).
-    // Loaders and procedural generators produce it; Renderer::CreateMeshes uploads it.
+    // Loaders and procedural generators produce it; the asset manager uploads it.
     struct MeshData
     {
         std::string name;

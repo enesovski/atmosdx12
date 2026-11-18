@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -43,6 +44,10 @@ namespace atmos
         // Returns the new client size once per resize.
         std::optional<WindowSize> ConsumeResize();
 
+        // Sees every message first (e.g. a UI layer); returning true marks it handled.
+        using MessageHandler = std::function<bool(HWND, UINT, WPARAM, LPARAM)>;
+        void SetMessageHandler(MessageHandler handler) { messageHandler_ = std::move(handler); }
+
     private:
         static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
         LRESULT HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -52,5 +57,6 @@ namespace atmos
         Input& input_;
         WindowSize clientSize_;
         bool resizePending_ = false;
+        MessageHandler messageHandler_;
     };
 }

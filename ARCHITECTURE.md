@@ -3,53 +3,90 @@
 ## Modules and dependencies
 
 ```text
-app/ (AtmosDX12.exe)            Application, FlyCameraController: window loop, input, scene setup
-   │ links
+app/ (AtmosDX12.exe)            Application, FlyCameraController, debug panels
+   | links
 engine/ (AtmosEngine.lib)
-   graphics/                    Renderer, RenderScene, RenderView, GpuScene, Mesh/MeshData, Frustum
+   ui/                          DebugUi: ImGui Win32 + D3D12 backends, an IOverlayRenderer
+   runtime/                     AssetManager (handles, async loading, GPU residency), RenderSceneBuilder
+   graphics/                    Renderer, RenderScene, RenderView, GpuScene, Mesh, Material, Frustum
    graphics/rendergraph/        RenderGraph, TexturePool
    graphics/passes/             DepthPrepass, OpaquePass, SkyPass, TonemapPass
-   graphics/d3d12/              Thin D3D12 layer: device, heaps, textures, buffers, pipelines, commands
-   assets/                      glTF loader (cgltf), primitive meshes → MeshData (CPU only)
-   scene/                       Camera (no GPU types)
+   graphics/d3d12/              Thin D3D12 layer: device, queues, heaps, textures, buffers, pipelines, commands
+   assets/                      glTF import, model/texture cookers, asset cache -> CPU ModelData/TextureData
+   scene/                       Scene, Entity, Transform, SceneSerializer (JSON), Camera
    platform/                    Window, Input, Paths (Win32)
-   core/                        Log, Assert, FrameTimer, Build flags, string helpers
+   core/                        Log, Assert, FrameTimer, ThreadPool, Handle, string helpers
    shaders/                     HLSL, compiled at runtime by DXC
 ```
 
 **Dependencies only point downward:**
 
-- `d3d12/` knows nothing about the render graph, passes, meshes, or the renderer.
-- `rendergraph/` knows `d3d12/` but no specific pass.
-- `assets/` produces CPU `MeshData` and never touches the GPU.
-- `scene/`, `platform/` and `core/` know nothing about graphics.
+- `runtime/` is the only module that knows both `scene/` and `graphics/`.
+- `assets/` is CPU-only and thread-safe. It produces `ModelData`/`TextureData` and uses the CPU-only data headers
+  `graphics/MeshData.h` and `graphics/MaterialData.h`.
+- `scene/` holds asset *handles*, never GPU types.
+- The renderer knows the debug UI only as an `IOverlayRenderer`.
 
-**The app talks to the engine only through:**
+**The app talks to the engine through:**
 
-- `Renderer`: `Render`, `Resize`, `CreateMeshes`, `RequestFrameDump`
-- `RenderScene`, `RenderView`
-- `Camera`, `Window`, `Input`
-- the asset loaders
+- `Renderer`: `Render`, `Resize`, `GetDevice`, `GetFrameStats`, `RequestFrameDump`
+- `AssetManager`: `LoadModel`, `Update`, `GetStats`
+- `Scene` and its serializer
+- `RequestSceneAssets` and `BuildRenderScene`
+- `DebugUi`, `Camera`, `Window`, `Input`
 
 ## Ownership
 
 ```text
 Application
-├── Input, Window, Camera, FlyCameraController, FrameTimer, RenderScene
-├── Renderer
-│   ├── GraphicsDevice      factory, adapter, device, graphics queue, 3 DescriptorHeaps,
-│   │                       DeferredReleaseQueue, bindless root signature, info queue
-│   ├── SwapChain           back buffers as Textures
-│   ├── FrameScheduler      per-slot allocators + frame fence; drives the release queue
-│   ├── UploadAllocator     per-frame linear upload memory (constants)
-│   ├── CommandContext      barrier batching, target binding, root binding, draws
-│   ├── UploadContext       load-time copies into GPU-only buffers
-│   ├── ShaderCompiler      DXC
-│   ├── TexturePool         transient render targets reused across frames
-│   ├── GpuScene            per-frame draw list + DrawData buffers (one per frame slot)
-│   └── DepthPrepass, OpaquePass, SkyPass, TonemapPass (each owns its PipelineState)
-└── meshes_                 GPU Meshes (destroyed before the Renderer)
+|-- Input, Window, Camera, FlyCameraController, FrameTimer
+|-- Scene (entities, environment, start camera) -> RenderScene (rebuilt every frame)
+|-- Renderer
+|   |-- GraphicsDevice      factory, adapter, device, graphics + copy queues, 3 DescriptorHeaps,
+|   |                       DeferredReleaseQueue, bindless root signature, info queue
+|   |-- SwapChain           back buffers as Textures
+|   |-- FrameScheduler      per-slot allocators + frame fence; drives the release queue
+|   |-- UploadAllocator     per-frame linear upload memory (constants)
+|   |-- CommandContext      barrier batching, target binding, root binding, draws
+|   |-- ShaderCompiler      DXC
+|   |-- TexturePool         transient render targets reused across frames
+|   |-- GpuScene            per-frame draw buckets + DrawData and material buffers (per frame slot)
+|   `-- DepthPrepass, OpaquePass, SkyPass, TonemapPass (each owns its PipelineStates)
+|-- AssetManager            ThreadPool, UploadQueue (copy queue), models, textures, fallbacks
+`-- DebugUi                 destroyed first; the app waits for the GPU before shutdown
 ```
+
+## Application frame
+
+```text
+messages -> resize -> DebugUi::BeginFrame -> camera (unless the UI has input)
+-> AssetManager::Update            integrate finished jobs, record uploads, mark ready, patch material textures
+-> BuildRenderScene(scene, assets) entities x model nodes -> MeshInstances (+ environment)
+-> debug panels -> DebugUi::EndFrame
+-> Renderer::Render(renderScene, view, debugUi)
+```
+
+## Asset pipeline
+
+```text
+worker thread                                   main thread (AssetManager::Update)          GPU
+LoadCookedModel(path)                           create Mesh buffers and Materials            copy queue
+  cached .amodel newer than source? read it      (textures -> fallback indices)              (UploadQueue)
+  else ImportGltfModel, then write .amodel      request every material texture               fence -> Ready
+LoadCookedTexture(path, kind)                   create Texture (all mips), record upload
+  cached .dds newer than source? read it
+  else WIC decode -> mips -> BC1/BC3/BC5 -> write .dds
+```
+
+- **Handles.** `ModelHandle` is a typed index. `LoadModel` deduplicates by path, and textures are deduplicated by
+  path + kind.
+- **Fallbacks.** A white texture covers base color, occlusion, metal-roughness and emissive; a flat normal covers
+  normal maps; a magenta cube replaces models that fail to load. Materials point at fallbacks until their textures
+  are ready.
+- **Cache.** `<exe>/AssetCache/` holds files named `<name>_<hash(path, cooker version)>.amodel` or `.dds`. Bump
+  `FormatVersion` (models) or `CookerVersion` (textures) after changing a cooker.
+- **Texture kinds.** Base color and emissive are sRGB BC1/BC3; metallic-roughness and occlusion are linear BC1;
+  normal maps are BC5.
 
 ## Frame lifecycle (`Renderer::Render`)
 
@@ -58,12 +95,14 @@ Application
 2. `UploadAllocator::BeginFrame` resets the slot's upload region. `CommandContext::Begin` binds the descriptor heap,
    then the root signature.
 3. `ViewConstants` are bound once, for both graphics and compute.
-4. `GpuScene::Update` frustum-culls `RenderScene::meshInstances` and writes a `DrawData` per visible
-   (instance, submesh) into this slot's upload buffer.
+4. `GpuScene::Update` frustum-culls `RenderScene::meshInstances`. For each visible (instance, submesh) it writes a
+   `DrawData`, and for each material in use a `MaterialGpuData`, into this slot's buffers. It then sorts draws into
+   buckets: opaque or masked, single- or double-sided.
 5. A `RenderGraph` is built:
    - import the back buffer
    - create the transient `Scene Depth` and `Scene Color`
    - each pass calls `AddToGraph`
+   - an `Overlay` pass is added when a debug UI is given
 6. `RenderGraph::Execute`:
    - culls unused passes
    - derives texture usage flags
@@ -71,13 +110,14 @@ Application
    - for each live pass: transitions, binds targets, applies clears, runs the pass
    - leaves the back buffer in PRESENT
 7. Submit, Present, `EndFrame` (signal the fence and rotate the slot), then `TexturePool::EndFrame` (evicts textures
-   unused for 3 frames).
+   unused for 3 frames). The pass list and scene statistics are kept for `GetFrameStats()`.
 
 ```text
-Depth Prepass   depth-write(clear)  Scene Depth
-Opaque          depth-read          Scene Depth   color(clear)  Scene Color
-Sky             depth-read          Scene Depth   color(load)   Scene Color
+Depth Prepass   depth-write(clear)  Scene Depth                                   4 PSOs: opaque/masked x culling
+Opaque          depth-read (EQUAL)  Scene Depth   color(clear)     Scene Color    2 PSOs: single/double-sided
+Sky             depth-read          Scene Depth   color(load)      Scene Color
 Tonemap         read                Scene Color   color(dont-care) Back Buffer
+Overlay         (optional)                        color(load)      Back Buffer    ImGui
 ```
 
 ## Render graph (`graphics/rendergraph/`)
@@ -121,21 +161,29 @@ graph.AddPass(L"Sky",
 - **Execution order** is declaration order. State tracking stays in `Texture` and `CommandContext`; the graph only
   decides *when* to transition.
 
-## Geometry path
+## Geometry and materials
 
-- **`MeshData`** (CPU) is produced by the asset loaders in engine space.
-- **`Mesh`** (GPU) has three static `Buffer`s:
+- **`Mesh`** has three static `Buffer`s:
   - positions: `float3`, raw view
-  - attributes: normal + uv, 20 B, raw view
+  - attributes: normal + tangent + uv, 36 B, raw view
   - indices: `uint32`
 
-  It also keeps a submesh table (index range + base color) and local bounds.
-- **Vertex pulling.** `Mesh.hlsl` reads vertices by `SV_VertexID` from `ResourceDescriptorHeap[...]`
-  `ByteAddressBuffer`s. Only the index buffer goes through the input assembler.
-- **Per draw:** root constants `{ drawIndex, drawBufferIndex, positionBufferIndex, attributeBufferIndex }`
-  (`MeshRootConstants`), and `DrawData { world, normalMatrix, baseColor }` in a `StructuredBuffer`.
-- **Depth.** The prepass writes depth. Opaque tests `EQUAL` against it, read-only. Both use one `precise` transform,
-  so their depths match bit for bit. Sky sits at z = 0 with `GREATER_EQUAL`, so it only covers cleared depth.
+  It also keeps a submesh table (index range + material index into the model's materials) and local bounds.
+- **`Material`** holds `MaterialData`: glTF metallic-roughness factors, alpha mode and cutoff, double-sided, texture
+  paths. It also holds the bindless SRV index of each of its 5 texture slots. Shaders see `MaterialGpuData`, 64 B.
+- **Vertex pulling.** `Mesh.hlsl` reads vertices by `SV_VertexID` from `ByteAddressBuffer`s. Only the index buffer
+  goes through the input assembler.
+- **Per draw:** root constants `{ drawIndex, drawBufferIndex, materialBufferIndex, positionBufferIndex,
+  attributeBufferIndex }`. `DrawData { world, normalMatrix, materialIndex }` and the material table are
+  `StructuredBuffer`s in the frame slot's upload memory.
+- **Shading (temporary until Phase 3):**
+  - base color x factor
+  - BC5 normal map with the Z channel rebuilt
+  - lambert sun + ambient x occlusion + emissive
+  - back faces of double-sided materials flip their tangent frame
+- **Depth.** The prepass writes depth (masked buckets `clip` against base color alpha). Opaque tests `EQUAL`,
+  read-only, with no alpha test. Both use one `precise` transform. Sky sits at z = 0 with `GREATER_EQUAL`, so it only
+  covers cleared depth.
 
 ## Binding model (bindless)
 
@@ -156,13 +204,17 @@ There is one root signature for every pipeline (`BindlessRootSignature.h`):
 - **Swap-chain resize** flushes and calls `ReleaseAll()`, because DXGI needs every back-buffer reference gone.
 - **Static buffers** stay in COMMON. They rely on implicit promotion (copy dest, SRV, index buffer) and decay, so
   they need no barriers. Textures are tracked explicitly.
-- **Per-frame data** (constants, `DrawData`) lives in memory owned by the current frame slot and is protected by the
-  same fence wait as the command allocator.
+- **Per-frame data** (constants, `DrawData`, materials) lives in memory owned by the current frame slot and is
+  protected by the same fence wait as the command allocator.
+- **Asset uploads** run on the copy queue (`UploadQueue`). The CPU waits for its fence before any frame references the
+  resource, so the copy and graphics queues never touch one resource at the same time. Destinations rely on COMMON
+  promotion and decay.
 
 ## Conventions
 
 - **Coordinates:** left-handed, +Y up, camera yaw 0 looks along +Z. Front faces wind **clockwise**.
-- **glTF import** mirrors Z on positions, normals and node matrices, and reverses winding. A mirror keeps the
+- **glTF import** mirrors Z on positions, normals, tangents and node matrices, negates the tangent W, and reverses
+  winding. A mirror keeps the
   projected image the same, so glTF's counter-clockwise faces would otherwise stay counter-clockwise on screen.
 - **Depth:** reverse-Z with an infinite far plane (near = 1, far = 0), `GREATER_EQUAL`, clear to 0.
 - **Matrices** are row-major with row vectors on both sides (DXC `-Zpr`, `mul(v, M)`).
@@ -190,14 +242,25 @@ There is one root signature for every pipeline (`BindlessRootSignature.h`):
 | Depth | Reverse-Z, infinite far | Standard Z | Unreal, Unity, Frostbite |
 | Matrices | Row vectors (`-Zpr`) | Column-major + transposes | Unreal, DirectXMath |
 | Packaging | Static lib + exe | Engine DLLs | Unreal editor modules |
+| Scene model | Plain entities + optional components | ECS (EnTT, DOTS, Bevy); actor/component graphs | Unreal actors, Unity GameObjects |
+| Scene -> renderer | Rebuild `RenderScene` every frame | Persistent proxies with dirty tracking | Unreal `FScene` proxies |
+| Asset pipeline | Cook on first use into a hashed cache | Explicit offline cook | Unreal cooking, Unity Library |
+| Texture compression | BC1/BC3 color, BC1 data, BC5 normals | BC7 (needs a GPU compressor), Basis/KTX2 | Unreal's default compression is BC1/BC3 + BC5 |
+| Async loading | Thread pool (CPU) + copy queue (GPU), resources created on the main thread | Worker-thread resource creation; DirectStorage | Copy-queue streaming in Unreal and Unity |
+| Materials | Per-frame material table + index per draw | Per-draw CBV; persistent material buffer | Unity SRP Batcher, Unreal persistent material data |
+| Alpha modes | Pipeline buckets; alpha test only in the depth prepass | Dynamic branching; full PSO keys | Unreal/HDRP masked depth prepass |
+| Debug UI | Dear ImGui behind `IOverlayRenderer` | Custom retained UI | Ubiquitous in engine tooling |
+| Scene files | JSON, paths relative to the file | YAML (Unity), binary packages (Unreal), USD | |
 
 ## Known limits (intentional for now)
 
-- Opaque lighting is a temporary lambert + sun. Deferred PBR + clustered lights come in Phase 3.
-- Materials are a base color only: no textures, tangents or alpha. These arrive in Phase 2.
-- glTF is parsed at load time, and uploads block, on the graphics queue. A cooked format and async copies come in
-  Phase 2.
-- Single-threaded recording on one direct queue. Barriers cover whole resources.
-- `GpuScene` holds at most 16,384 draws per frame, and logs a warning beyond that.
-- The render graph does not alias memory or reorder passes, and it only handles textures. Graph-managed buffers
-  arrive when a pass needs one.
+- Lighting is a temporary lambert + sun + flat ambient. There are no shadows; metallic and roughness are loaded but
+  unused. Phase 3 brings deferred PBR, clustered lights and shadows.
+- `BLEND` materials render as alpha-tested until Phase 3 adds a sorted transparent pass.
+- Textures embedded in `.glb` buffers or data URIs are not loaded yet; they fall back to white.
+- Texture compression is BC1/BC3/BC5 on the CPU; BC7 needs a GPU compressor.
+- The asset cache lives next to each executable, so Debug and Release cook separately. Stale cache files are not
+  cleaned up.
+- No asset unloading or hot reload yet. Single-threaded command recording on one direct queue.
+- `GpuScene` holds at most 16,384 draws and 4,096 materials per frame, and logs a warning beyond that.
+- The render graph does not alias memory or reorder passes, and it only handles textures.

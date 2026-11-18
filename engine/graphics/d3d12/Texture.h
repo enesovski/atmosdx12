@@ -34,6 +34,7 @@ namespace atmos
     {
         uint32_t width = 0;
         uint32_t height = 0;
+        uint32_t mipLevels = 1;
         DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
         TextureUsage usage = TextureUsage::ShaderResource;
         std::array<float, 4> clearColor{ 0.0f, 0.0f, 0.0f, 1.0f };

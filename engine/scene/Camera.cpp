@@ -15,13 +15,23 @@ namespace atmos
 
     void Camera::Rotate(float yawDeltaDegrees, float pitchDeltaDegrees)
     {
-        yawDegrees_ += yawDeltaDegrees;
-        pitchDegrees_ = std::clamp(pitchDegrees_ + pitchDeltaDegrees, -89.0f, 89.0f);
+        SetRotation(yawDegrees_ + yawDeltaDegrees, pitchDegrees_ + pitchDeltaDegrees);
     }
 
     void Camera::AdjustFov(float deltaDegrees)
     {
-        fovDegrees_ = std::clamp(fovDegrees_ + deltaDegrees, 35.0f, 95.0f);
+        SetFov(fovDegrees_ + deltaDegrees);
+    }
+
+    void Camera::SetRotation(float yawDegrees, float pitchDegrees)
+    {
+        yawDegrees_ = std::remainder(yawDegrees, 360.0f);
+        pitchDegrees_ = std::clamp(pitchDegrees, -89.0f, 89.0f);
+    }
+
+    void Camera::SetFov(float fovDegrees)
+    {
+        fovDegrees_ = std::clamp(fovDegrees, 35.0f, 95.0f);
     }
 
     XMFLOAT3 Camera::GetForward() const

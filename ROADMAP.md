@@ -11,7 +11,7 @@ hold.
 |---|---|---|
 | 0 | Foundation refactor | ✅ done |
 | 1 | Render graph v1 and first geometry | ✅ done ([plan and decisions](docs/phase-1-plan.md)) |
-| 2 | Scene, assets, and materials | |
+| 2 | Scene, assets, and materials | ✅ done ([decisions](docs/phase-2-plan.md)) |
 | 3 | Lighting and shadows (deferred + clustered) | |
 | 4 | Physically based atmosphere and post-processing | |
 | 5 | GPU-driven rendering and performance | |
@@ -113,7 +113,19 @@ All four are recorded through the render graph. The phase also brings:
 - an unused pass is culled
 - resize works, and GPU validation is clean
 
-## Phase 2: scene, assets, and materials
+## Phase 2: scene, assets, and materials ✅ done
+
+`scenes/sponza.json` streams Sponza in asynchronously, with all glTF texture slots, alpha-tested and double-sided
+materials, and an ImGui overlay. See [docs/phase-2-plan.md](docs/phase-2-plan.md) for the decisions.
+
+**Differences from the plan below:**
+
+- **Scene model:** plain entity structs rather than EnTT.
+- **Texture compression:** BC1/BC3/BC5 rather than BC7; CPU BC7 was too slow to cook.
+- **Transparency:** `BLEND` materials render as masked until Phase 3's transparent pass.
+- **Debug UI:** it is on by default (toggle with F1).
+- **Stats:** per-pass stats show live/culled passes, draws and materials. GPU timings come in Phase 5.
+- **Test coverage:** only Sponza was tested; there is no multi-model scene yet.
 
 - **Scene model:** a gameplay-facing `Scene` with entities, a transform hierarchy, and components (mesh renderer,
   light, camera, environment), kept separate from the renderer's `RenderScene`. `RenderScene` holds flat arrays of
