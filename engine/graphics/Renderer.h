@@ -1,20 +1,18 @@
 #pragma once
 
-#include "graphics/GpuScene.h"
+#include "graphics/SceneRenderer.h"
 #include "graphics/d3d12/CommandContext.h"
 #include "graphics/d3d12/FrameScheduler.h"
+#include "graphics/d3d12/GpuTimer.h"
 #include "graphics/d3d12/GraphicsDevice.h"
 #include "graphics/d3d12/ShaderCompiler.h"
 #include "graphics/d3d12/SwapChain.h"
 #include "graphics/d3d12/UploadAllocator.h"
-#include "graphics/passes/DepthPrepass.h"
-#include "graphics/passes/OpaquePass.h"
-#include "graphics/passes/SkyPass.h"
-#include "graphics/passes/TonemapPass.h"
 #include "graphics/rendergraph/RenderGraph.h"
-#include "graphics/rendergraph/TexturePool.h"
+#include "graphics/rendergraph/TransientResourcePool.h"
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace atmos
@@ -26,11 +24,14 @@ namespace atmos
     struct RenderFrameStats
     {
         std::vector<RenderPassInfo> passes;
-        GpuSceneStats scene;
+        SceneRenderStats scene;
         size_t pooledTextures = 0;
+        size_t pooledBuffers = 0;
+        float gpuMilliseconds = 0.0f;
     };
 
-    // Owns the GPU frame loop and builds the render graph every frame.
+    // Owns the GPU and the frame loop: frame slots, swap chain, transient pool and the render graph.
+    // What is drawn is decided by SceneRenderer.
     class Renderer
     {
     public:
@@ -48,14 +49,14 @@ namespace atmos
         void WaitIdle();
 
         GraphicsDevice& GetDevice() { return device_; }
-
         const RenderFrameStats& GetFrameStats() const { return frameStats_; }
 
         // Logs the next frame's graph and statistics.
         void RequestFrameDump() { dumpNextFrame_ = true; }
 
     private:
-        void BuildFrameGraph(RenderGraph& graph, const RenderScene& scene, IOverlayRenderer* overlay);
+        void AddOverlayPass(RenderGraph& graph, RGTexture backBuffer, IOverlayRenderer* overlay) const;
+        void LogFrameDump(const RenderGraph& graph) const;
 
         // Declaration order is construction order; destruction runs after Flush().
         GraphicsDevice device_;
@@ -64,14 +65,9 @@ namespace atmos
         UploadAllocator uploadAllocator_;
         CommandContext commandContext_;
         ShaderCompiler shaderCompiler_;
-
-        TexturePool texturePool_;
-        GpuScene gpuScene_;
-
-        DepthPrepass depthPrepass_;
-        OpaquePass opaquePass_;
-        SkyPass skyPass_;
-        TonemapPass tonemapPass_;
+        TransientResourcePool transientPool_;
+        GpuTimer gpuTimer_;
+        std::unique_ptr<SceneRenderer> sceneRenderer_;
 
         RenderFrameStats frameStats_;
         uint64_t frameNumber_ = 0;

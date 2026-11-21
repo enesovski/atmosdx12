@@ -1,5 +1,5 @@
 #include "graphics/rendergraph/RenderGraph.h"
-#include "graphics/rendergraph/TexturePool.h"
+#include "graphics/rendergraph/TransientResourcePool.h"
 #include "graphics/d3d12/CommandContext.h"
 #include "core/Assert.h"
 #include "core/Log.h"
@@ -25,34 +25,53 @@ namespace atmos
         return *texture;
     }
 
+    Buffer& RGContext::GetBuffer(RGBuffer handle) const
+    {
+        Buffer* buffer = graph_.resources_[handle.index].buffer;
+        ATMOS_ASSERT(buffer, "Buffer was not declared by this pass");
+        return *buffer;
+    }
+
     RGTexture RGBuilder::ReadTexture(RGTexture texture)
     {
-        graph_.AddAccess(passIndex_, texture, RenderGraph::Access::ShaderRead, LoadOp::Load);
+        graph_.AddAccess(passIndex_, texture.index, RenderGraph::Access::ShaderRead, LoadOp::Load, All);
         return texture;
     }
 
     RGTexture RGBuilder::WriteColor(RGTexture texture, LoadOp loadOp)
     {
-        graph_.AddAccess(passIndex_, texture, RenderGraph::Access::ColorWrite, loadOp);
+        graph_.AddAccess(passIndex_, texture.index, RenderGraph::Access::ColorWrite, loadOp, All);
         return texture;
     }
 
-    RGTexture RGBuilder::WriteDepth(RGTexture texture, LoadOp loadOp)
+    RGTexture RGBuilder::WriteDepth(RGTexture texture, LoadOp loadOp, uint32_t slice)
     {
-        graph_.AddAccess(passIndex_, texture, RenderGraph::Access::DepthWrite, loadOp);
+        graph_.AddAccess(passIndex_, texture.index, RenderGraph::Access::DepthWrite, loadOp, slice);
         return texture;
     }
 
     RGTexture RGBuilder::ReadDepth(RGTexture texture)
     {
-        graph_.AddAccess(passIndex_, texture, RenderGraph::Access::DepthRead, LoadOp::Load);
+        graph_.AddAccess(passIndex_, texture.index, RenderGraph::Access::DepthRead, LoadOp::Load, All);
         return texture;
     }
 
-    RGTexture RGBuilder::ReadWriteTexture(RGTexture texture)
+    RGTexture RGBuilder::ReadWriteTexture(RGTexture texture, uint32_t mip)
     {
-        graph_.AddAccess(passIndex_, texture, RenderGraph::Access::ReadWrite, LoadOp::Load);
+        graph_.AddAccess(passIndex_, texture.index, RenderGraph::Access::ReadWrite, LoadOp::Load, mip);
         return texture;
+    }
+
+    RGBuffer RGBuilder::ReadBuffer(RGBuffer buffer)
+    {
+        graph_.AddAccess(passIndex_, buffer.index, RenderGraph::Access::ShaderRead, LoadOp::Load, All);
+        return buffer;
+    }
+
+    RGBuffer RGBuilder::ReadWriteBuffer(RGBuffer buffer)
+    {
+        graph_.AddAccess(passIndex_, buffer.index, RenderGraph::Access::ReadWrite, LoadOp::Load, All);
+        return buffer;
     }
 
     void RGBuilder::SetSideEffects()
@@ -62,28 +81,40 @@ namespace atmos
 
     // --- RenderGraph -------------------------------------------------------------------
 
-    RenderGraph::RenderGraph(TexturePool& texturePool)
-        : texturePool_(texturePool)
+    RenderGraph::RenderGraph(TransientResourcePool& pool)
+        : pool_(pool)
     {
     }
 
     RGTexture RenderGraph::CreateTexture(const TextureDesc& desc)
     {
-        resources_.push_back({ .desc = desc });
+        resources_.push_back({ .textureDesc = desc });
+        return { static_cast<uint32_t>(resources_.size() - 1) };
+    }
+
+    RGBuffer RenderGraph::CreateBuffer(const BufferDesc& desc)
+    {
+        resources_.push_back({ .isBuffer = true, .bufferDesc = desc });
         return { static_cast<uint32_t>(resources_.size() - 1) };
     }
 
     RGTexture RenderGraph::ImportTexture(Texture& texture, D3D12_RESOURCE_STATES finalState)
     {
-        resources_.push_back({ .desc = texture.GetDesc(), .texture = &texture, .imported = true,
+        resources_.push_back({ .textureDesc = texture.GetDesc(), .texture = &texture, .imported = true,
                                .finalState = finalState });
         return { static_cast<uint32_t>(resources_.size() - 1) };
     }
 
-    void RenderGraph::AddAccess(size_t passIndex, RGTexture texture, Access access, LoadOp loadOp)
+    RGBuffer RenderGraph::ImportBuffer(Buffer& buffer)
     {
-        ATMOS_ASSERT(texture.index < resources_.size(), "Texture handle is not from this graph");
-        passes_[passIndex].accesses.push_back({ texture, access, loadOp });
+        resources_.push_back({ .isBuffer = true, .bufferDesc = buffer.GetDesc(), .buffer = &buffer, .imported = true });
+        return { static_cast<uint32_t>(resources_.size() - 1) };
+    }
+
+    void RenderGraph::AddAccess(size_t passIndex, uint32_t resource, Access access, LoadOp loadOp, uint32_t subresource)
+    {
+        ATMOS_ASSERT(resource < resources_.size(), "Resource handle is not from this graph");
+        passes_[passIndex].accesses.push_back({ resource, access, loadOp, subresource });
     }
 
     bool RenderGraph::Writes(const PassAccess& access)
@@ -92,16 +123,15 @@ namespace atmos
                access.access == Access::ReadWrite;
     }
 
+    bool RenderGraph::OverwritesWholeResource(const PassAccess& access)
+    {
+        return (access.access == Access::ColorWrite || access.access == Access::DepthWrite) &&
+               access.loadOp != LoadOp::Load && access.subresource == RGBuilder::All;
+    }
+
     bool RenderGraph::ReadsPreviousContents(const PassAccess& access)
     {
-        switch (access.access)
-        {
-            case Access::ColorWrite:
-            case Access::DepthWrite:
-                return access.loadOp == LoadOp::Load;
-            default:
-                return true;
-        }
+        return !Writes(access) || access.access == Access::ReadWrite || !OverwritesWholeResource(access);
     }
 
     void RenderGraph::Execute(CommandContext& commands)
@@ -117,14 +147,14 @@ namespace atmos
 
         for (Resource& resource : resources_)
         {
-            if (resource.imported)
+            if (resource.imported && !resource.isBuffer)
                 commands.Transition(*resource.texture, resource.finalState);
         }
     }
 
     // Walks passes backwards. A resource is "needed" if a later live pass reads it (or it is
-    // imported). A pass lives if it has side effects or writes something needed. A full
-    // overwrite (Clear/DontCare) ends the need for earlier writers of that resource.
+    // imported). A pass lives if it has side effects or writes something needed. A whole-resource
+    // overwrite ends the need for earlier writers.
     void RenderGraph::CullPasses()
     {
         std::vector<bool> needed(resources_.size(), false);
@@ -135,7 +165,7 @@ namespace atmos
         for (auto pass = passes_.rbegin(); pass != passes_.rend(); ++pass)
         {
             const bool writesNeeded = std::ranges::any_of(pass->accesses, [&](const PassAccess& access) {
-                return Writes(access) && needed[access.texture.index];
+                return Writes(access) && needed[access.resource];
             });
 
             pass->culled = !pass->hasSideEffects && !writesNeeded;
@@ -145,14 +175,14 @@ namespace atmos
 
             for (const PassAccess& access : pass->accesses)
             {
-                if (Writes(access) && !ReadsPreviousContents(access))
-                    needed[access.texture.index] = false;
+                if (OverwritesWholeResource(access))
+                    needed[access.resource] = false;
             }
 
             for (const PassAccess& access : pass->accesses)
             {
                 if (ReadsPreviousContents(access))
-                    needed[access.texture.index] = true;
+                    needed[access.resource] = true;
             }
         }
     }
@@ -161,8 +191,11 @@ namespace atmos
     {
         for (Resource& resource : resources_)
         {
-            if (!resource.imported)
-                resource.desc.usage = TextureUsage::None;
+            if (resource.imported)
+                continue;
+
+            resource.textureDesc.usage = TextureUsage::None;
+            resource.bufferDesc.usage = BufferUsage::None;
         }
 
         for (const Pass& pass : passes_)
@@ -172,95 +205,150 @@ namespace atmos
 
             for (const PassAccess& access : pass.accesses)
             {
-                Resource& resource = resources_[access.texture.index];
+                Resource& resource = resources_[access.resource];
 
                 if (resource.imported)
                     continue;
 
+                if (resource.isBuffer)
+                {
+                    const BufferUsage usage = access.access == Access::ReadWrite ? BufferUsage::UnorderedAccess
+                                                                                 : BufferUsage::ShaderResource;
+                    resource.bufferDesc.usage = resource.bufferDesc.usage | usage;
+                    continue;
+                }
+
+                TextureUsage& usage = resource.textureDesc.usage;
+
                 switch (access.access)
                 {
-                    case Access::ShaderRead: resource.desc.usage = resource.desc.usage | TextureUsage::ShaderResource; break;
-                    case Access::ColorWrite: resource.desc.usage = resource.desc.usage | TextureUsage::RenderTarget; break;
+                    case Access::ShaderRead: usage = usage | TextureUsage::ShaderResource; break;
+                    case Access::ColorWrite: usage = usage | TextureUsage::RenderTarget; break;
                     case Access::DepthWrite:
-                    case Access::DepthRead:  resource.desc.usage = resource.desc.usage | TextureUsage::DepthStencil; break;
-                    case Access::ReadWrite:  resource.desc.usage = resource.desc.usage | TextureUsage::UnorderedAccess; break;
+                    case Access::DepthRead:  usage = usage | TextureUsage::DepthStencil; break;
+                    case Access::ReadWrite:  usage = usage | TextureUsage::UnorderedAccess; break;
                 }
             }
         }
     }
 
-    Texture& RenderGraph::ResolveTexture(RGTexture handle)
+    RenderGraph::Resource& RenderGraph::Resolve(uint32_t index)
     {
-        Resource& resource = resources_[handle.index];
+        Resource& resource = resources_[index];
 
-        if (!resource.texture)
-            resource.texture = &texturePool_.Acquire(resource.desc);
+        if (resource.isBuffer && !resource.buffer)
+            resource.buffer = &pool_.AcquireBuffer(resource.bufferDesc);
+        else if (!resource.isBuffer && !resource.texture)
+            resource.texture = &pool_.AcquireTexture(resource.textureDesc);
 
-        return *resource.texture;
+        return resource;
     }
 
     void RenderGraph::ExecutePass(Pass& pass, CommandContext& commands)
     {
-        // 1. Required state per texture; several reads of one texture combine.
         struct RequiredState
         {
-            Texture* texture;
+            uint32_t resource;
             D3D12_RESOURCE_STATES state;
+            bool uav;
         };
 
         std::vector<RequiredState> requiredStates;
         std::vector<Texture*> colorTargets;
         Texture* depthTarget = nullptr;
+        uint32_t depthSlice = 0;
         bool readOnlyDepth = true;
 
         for (const PassAccess& access : pass.accesses)
         {
-            Texture& texture = ResolveTexture(access.texture);
+            Resource& resource = Resolve(access.resource);
             D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
 
             switch (access.access)
             {
                 case Access::ShaderRead: state = ShaderReadState; break;
-                case Access::ColorWrite: state = D3D12_RESOURCE_STATE_RENDER_TARGET; colorTargets.push_back(&texture); break;
-                case Access::DepthWrite: state = D3D12_RESOURCE_STATE_DEPTH_WRITE; depthTarget = &texture; readOnlyDepth = false; break;
-                case Access::DepthRead:  state = D3D12_RESOURCE_STATE_DEPTH_READ; depthTarget = &texture; break;
                 case Access::ReadWrite:  state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS; break;
+                case Access::ColorWrite:
+                    state = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                    colorTargets.push_back(resource.texture);
+                    break;
+                case Access::DepthWrite:
+                    state = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+                    depthTarget = resource.texture;
+                    depthSlice = access.subresource == RGBuilder::All ? 0 : access.subresource;
+                    readOnlyDepth = false;
+                    break;
+                case Access::DepthRead:
+                    state = D3D12_RESOURCE_STATE_DEPTH_READ;
+                    depthTarget = resource.texture;
+                    break;
             }
 
-            auto existing = std::ranges::find(requiredStates, &texture, &RequiredState::texture);
+            auto existing = std::ranges::find(requiredStates, access.resource, &RequiredState::resource);
 
             if (existing != requiredStates.end())
+            {
                 existing->state |= state;
+                existing->uav |= access.access == Access::ReadWrite;
+            }
             else
-                requiredStates.push_back({ &texture, state });
+            {
+                requiredStates.push_back({ access.resource, state, access.access == Access::ReadWrite });
+            }
         }
 
-        // 2. Transitions, batched by the command context.
         for (const RequiredState& required : requiredStates)
-            commands.Transition(*required.texture, required.state);
+        {
+            Resource& resource = resources_[required.resource];
+
+            if (resource.isBuffer)
+            {
+                // Buffers decay to COMMON between frames; the first use this frame starts from there.
+                if (!resource.usedThisFrame)
+                    commands.MarkDecayedToCommon(*resource.buffer);
+
+                if (required.uav && resource.lastAccessWasUav)
+                    commands.UavBarrier(resource.buffer->GetResource());
+
+                commands.Transition(*resource.buffer, required.state);
+            }
+            else
+            {
+                if (required.uav && resource.lastAccessWasUav)
+                    commands.UavBarrier(resource.texture->GetResource());
+
+                commands.Transition(*resource.texture, required.state);
+            }
+
+            resource.lastAccessWasUav = required.uav;
+            resource.usedThisFrame = true;
+        }
 
         const ScopedGpuEvent event(commands, pass.name.c_str());
 
-        // 3. Render targets and load ops.
         if (!colorTargets.empty() || depthTarget)
-            commands.SetRenderTargets(colorTargets, depthTarget, readOnlyDepth);
+            commands.SetRenderTargets(colorTargets, depthTarget, readOnlyDepth, depthSlice);
 
         for (const PassAccess& access : pass.accesses)
         {
             if (access.loadOp != LoadOp::Clear)
                 continue;
 
-            Texture& texture = ResolveTexture(access.texture);
+            Texture& texture = *resources_[access.resource].texture;
 
             if (access.access == Access::ColorWrite)
                 commands.ClearRenderTarget(texture);
             else if (access.access == Access::DepthWrite)
-                commands.ClearDepth(texture);
+                commands.ClearDepth(texture, access.subresource == RGBuilder::All ? 0 : access.subresource);
         }
 
-        // 4. The pass's own commands.
         RGContext context(commands, *this);
         pass.execute(context);
+    }
+
+    const std::wstring& RenderGraph::GetName(const Resource& resource) const
+    {
+        return resource.isBuffer ? resource.bufferDesc.debugName : resource.textureDesc.debugName;
     }
 
     std::vector<RenderPassInfo> RenderGraph::GetPassInfos() const
@@ -279,7 +367,7 @@ namespace atmos
         static constexpr const char* AccessNames[] = { "read", "color", "depth-write", "depth-read", "uav" };
         static constexpr const char* LoadOpNames[] = { "load", "clear", "dont-care" };
 
-        log::Info("Render graph: {} passes, {} textures", passes_.size(), resources_.size());
+        log::Info("Render graph: {} passes, {} resources", passes_.size(), resources_.size());
 
         for (const Pass& pass : passes_)
         {
@@ -287,12 +375,14 @@ namespace atmos
 
             for (const PassAccess& access : pass.accesses)
             {
-                const Resource& resource = resources_[access.texture.index];
-                accesses += std::format(" {}({}", ToUtf8(resource.desc.debugName),
+                accesses += std::format(" {}({}", ToUtf8(GetName(resources_[access.resource])),
                                         AccessNames[static_cast<int>(access.access)]);
 
                 if (access.access == Access::ColorWrite || access.access == Access::DepthWrite)
                     accesses += std::format(", {}", LoadOpNames[static_cast<int>(access.loadOp)]);
+
+                if (access.subresource != RGBuilder::All)
+                    accesses += std::format(", sub {}", access.subresource);
 
                 accesses += ")";
             }
@@ -302,8 +392,17 @@ namespace atmos
 
         for (const Resource& resource : resources_)
         {
-            log::Info("  texture {} {}x{} {}", ToUtf8(resource.desc.debugName), resource.desc.width,
-                      resource.desc.height, resource.imported ? "imported" : "transient");
+            if (resource.isBuffer)
+            {
+                log::Info("  buffer {} {} B {}", ToUtf8(GetName(resource)), resource.bufferDesc.size,
+                          resource.imported ? "imported" : "transient");
+            }
+            else
+            {
+                log::Info("  texture {} {}x{}x{} {}", ToUtf8(GetName(resource)), resource.textureDesc.width,
+                          resource.textureDesc.height, resource.textureDesc.arraySize,
+                          resource.imported ? "imported" : "transient");
+            }
         }
     }
 }

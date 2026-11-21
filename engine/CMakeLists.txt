@@ -52,6 +52,9 @@ add_library(AtmosEngine STATIC
     graphics/d3d12/DescriptorHeap.cpp
     graphics/d3d12/FrameScheduler.h
     graphics/d3d12/FrameScheduler.cpp
+    graphics/d3d12/FrameStructuredBuffer.h
+    graphics/d3d12/GpuTimer.h
+    graphics/d3d12/GpuTimer.cpp
     graphics/d3d12/GraphicsConfig.h
     graphics/d3d12/GraphicsDevice.h
     graphics/d3d12/GraphicsDevice.cpp
@@ -71,17 +74,34 @@ add_library(AtmosEngine STATIC
 
     graphics/rendergraph/RenderGraph.h
     graphics/rendergraph/RenderGraph.cpp
-    graphics/rendergraph/TexturePool.h
-    graphics/rendergraph/TexturePool.cpp
+    graphics/rendergraph/TransientResourcePool.h
+    graphics/rendergraph/TransientResourcePool.cpp
 
+    graphics/lighting/LightingTypes.h
+    graphics/lighting/LightingTypes.cpp
+    graphics/lighting/LightSetup.h
+    graphics/lighting/LightSetup.cpp
+    graphics/lighting/SkyLight.h
+    graphics/lighting/SkyLight.cpp
+
+    graphics/passes/DeferredLightingPass.h
+    graphics/passes/DeferredLightingPass.cpp
+    graphics/passes/DepthPipelines.h
+    graphics/passes/DepthPipelines.cpp
     graphics/passes/DepthPrepass.h
     graphics/passes/DepthPrepass.cpp
-    graphics/passes/OpaquePass.h
-    graphics/passes/OpaquePass.cpp
+    graphics/passes/GBufferPass.h
+    graphics/passes/GBufferPass.cpp
+    graphics/passes/LightClusteringPass.h
+    graphics/passes/LightClusteringPass.cpp
+    graphics/passes/ShadowPass.h
+    graphics/passes/ShadowPass.cpp
     graphics/passes/SkyPass.h
     graphics/passes/SkyPass.cpp
     graphics/passes/TonemapPass.h
     graphics/passes/TonemapPass.cpp
+    graphics/passes/TransparentPass.h
+    graphics/passes/TransparentPass.cpp
 
     graphics/Frustum.h
     graphics/Frustum.cpp
@@ -94,10 +114,13 @@ add_library(AtmosEngine STATIC
     graphics/MeshData.h
     graphics/OverlayRenderer.h
     graphics/RenderScene.h
+    graphics/RenderSettings.h
     graphics/RenderView.h
     graphics/RenderView.cpp
     graphics/Renderer.h
     graphics/Renderer.cpp
+    graphics/SceneRenderer.h
+    graphics/SceneRenderer.cpp
     graphics/ShaderInterop.h
 
     runtime/AssetManager.h

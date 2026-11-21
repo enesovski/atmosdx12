@@ -8,15 +8,23 @@ app/ (AtmosDX12.exe)            Application (frame loop), FlyCameraController, D
 engine/ (AtmosEngine.lib)
    ui/                          DebugUi: ImGui Win32 + D3D12 backends, an IOverlayRenderer
    runtime/                     AssetManager (handles, async loading, GPU residency), RenderSceneBuilder
-   graphics/                    Renderer, RenderScene, RenderView, GpuScene, Mesh, Material, Frustum
-   graphics/rendergraph/        RenderGraph, TexturePool
-   graphics/passes/             DepthPrepass, OpaquePass, SkyPass, TonemapPass
+   graphics/                    Renderer, SceneRenderer, RenderScene, RenderSettings, RenderView, GpuScene, Mesh,
+                                Material, Frustum
+   graphics/lighting/           LightSetup (lights, shadow views, cascades), SkyLight (IBL), LightingTypes
+   graphics/rendergraph/        RenderGraph, TransientResourcePool
+   graphics/passes/             DepthPrepass, ShadowPass, GBufferPass, LightClusteringPass, DeferredLightingPass,
+                                SkyPass, TransparentPass, TonemapPass (+ DepthPipelines shared by depth passes)
    graphics/d3d12/              Thin D3D12 layer: device, queues, heaps, textures, buffers, pipelines, commands
    assets/                      glTF import, model/texture cookers, asset cache -> CPU ModelData/TextureData
    scene/                       Scene, Entity, Transform, SceneSerializer (JSON), Camera
    platform/                    Window, Input, Paths (Win32)
    core/                        Log, Assert, FrameTimer, ThreadPool, Handle, string helpers
-   shaders/                     HLSL, compiled at runtime by DXC
+   shaders/                     HLSL, compiled at runtime by DXC:
+                                  Common.hlsli    view constants, samplers, fullscreen helpers
+                                  Scene/          draw/material loading, vertex processing, GBuffer encoding
+                                  Lighting/       BRDF, clusters, shadows, IBL, SurfaceLighting (shared lighting)
+                                  Sky/            analytic sky model
+                                  Passes/         one entry-point file per pass
 ```
 
 **Dependencies only point downward:**
@@ -49,9 +57,14 @@ Application
 |   |-- UploadAllocator     per-frame linear upload memory (constants)
 |   |-- CommandContext      barrier batching, target binding, root binding, draws
 |   |-- ShaderCompiler      DXC
-|   |-- TexturePool         transient render targets reused across frames
-|   |-- GpuScene            per-frame draw buckets + DrawData and material buffers (per frame slot)
-|   `-- DepthPrepass, OpaquePass, SkyPass, TonemapPass (each owns its PipelineStates)
+|   |-- TransientResourcePool  transient textures and buffers reused across frames
+|   |-- GpuTimer            timestamp queries around the frame
+|   `-- SceneRenderer       decides what is drawn
+|       |-- GpuScene        per-frame DrawData + material buffers; per-view culled DrawLists
+|       |-- LightSetup      GPU light list, camera + shadow views (cascades, atlas tiles)
+|       |-- SkyLight        persistent sky cube, SH irradiance, prefiltered specular, BRDF LUT
+|       |-- view and light FrameStructuredBuffers (per frame slot)
+|       `-- passes          each owns its PipelineStates
 |-- AssetManager            ThreadPool, UploadQueue (copy queue), models, textures, fallbacks
 `-- DebugUi                 destroyed first; the app waits for the GPU before shutdown
 ```
@@ -61,8 +74,9 @@ Application
 ```text
 messages -> resize -> DebugUi::BeginFrame -> shortcuts (F1/F5) -> fly camera (RMB held, cursor locked)
 -> AssetManager::Update            integrate finished jobs, record uploads, mark ready, patch material textures
--> BuildRenderScene(scene, assets) entities x model nodes -> MeshInstances (+ environment)
--> DebugPanels::Draw -> DebugUi::EndFrame
+-> DebugPanels::Draw -> DebugUi::EndFrame   edits environment, RenderSettings, lights; may spawn lights
+-> BuildRenderScene(scene, assets) entities x model nodes -> MeshInstances, light entities -> RenderLights
+-> renderScene.settings = the app's RenderSettings
 -> Renderer::Render(renderScene, view, debugUi)
 ```
 
@@ -108,30 +122,36 @@ LoadCookedTexture(path, kind)                   create Texture (all mips), recor
    with, and opens the command list.
 2. `UploadAllocator::BeginFrame` resets the slot's upload region. `CommandContext::Begin` binds the descriptor heap,
    then the root signature.
-3. `ViewConstants` are bound once, for both graphics and compute.
-4. `GpuScene::Update` frustum-culls `RenderScene::meshInstances`. For each visible (instance, submesh) it writes a
-   `DrawData`, and for each material in use a `MaterialGpuData`, into this slot's buffers. It then sorts draws into
-   buckets: opaque or masked, single- or double-sided.
-5. A `RenderGraph` is built:
-   - import the back buffer
-   - create the transient `Scene Depth` and `Scene Color`
-   - each pass calls `AddToGraph`
-   - an `Overlay` pass is added when a debug UI is given
+3. `ViewConstants` are bound once, for both graphics and compute. `GpuTimer::Begin` starts the frame timestamp.
+4. `SceneRenderer::Prepare`:
+   - `GpuScene::Update` writes a `DrawData` for every (instance, submesh) and a `MaterialGpuData` for every
+     material into this slot's buffers. Nothing is culled here.
+   - `LightSetup::Prepare` builds the GPU light list and the views: camera, 4 sun cascades, then one atlas tile per
+     shadowed spot light and six per shadowed point light (nearest lights first).
+   - `GpuScene::Cull` fills one `DrawList` per view (camera; each shadow view without transparents). Transparent
+     camera draws are sorted back to front.
+5. A `RenderGraph` is built: import the back buffer, `SceneRenderer::AddPasses`, then an `Overlay` pass when a
+   debug UI is given. Each pass creates the transient outputs it owns and returns their handles.
 6. `RenderGraph::Execute`:
    - culls unused passes
-   - derives texture usage flags
-   - takes transients from the `TexturePool`
-   - for each live pass: transitions, binds targets, applies clears, runs the pass
+   - derives usage flags and takes transients from the `TransientResourcePool`
+   - for each live pass: transitions, UAV barriers, binds targets, applies clears, runs the pass
    - leaves the back buffer in PRESENT
-7. Submit, Present, `EndFrame` (signal the fence and rotate the slot), then `TexturePool::EndFrame` (evicts textures
-   unused for 3 frames). The pass list and scene statistics are kept for `GetFrameStats()`.
+7. `GpuTimer::End`, Submit, Present, `EndFrame` (signal the fence and rotate the slot), then the pool's `EndFrame`
+   (evicts resources unused for 3 frames). Pass list, scene stats and GPU time are kept for `GetFrameStats()`.
 
 ```text
-Depth Prepass   depth-write(clear)  Scene Depth                                   4 PSOs: opaque/masked x culling
-Opaque          depth-read (EQUAL)  Scene Depth   color(clear)     Scene Color    2 PSOs: single/double-sided
-Sky             depth-read          Scene Depth   color(load)      Scene Color
-Tonemap         read                Scene Color   color(dont-care) Back Buffer
-Overlay         (optional)                        color(load)      Back Buffer    ImGui
+Sky Light *         compute     Sky Light Capture, Irradiance SH, Specular mips, BRDF LUT   only when the sun moves
+Shadow Cascade 0-3  depth-write Sun Shadow Cascades (2048x2048 x 4 array, one slice per pass)
+Shadow Atlas        depth-write Shadow Atlas (4096x4096, 512x512 tiles)
+Depth Prepass       depth-write Scene Depth                                     4 PSOs: opaque/masked x culling
+GBuffer             depth-read (EQUAL) -> GBuffer A/B/C, Scene Color (cleared, emissive written)
+Light Clustering    compute     Cluster Light Counts / Indices (16x9x24 clusters)
+Deferred Lighting   compute     reads depth, GBuffer, shadows, clusters, IBL; adds to Scene Color (UAV)
+Sky                 depth-read  Scene Color (load)
+Transparent         depth-read  Scene Color (alpha blend, forward, same lighting); culled when empty
+Tonemap             read        Scene Color -> Back Buffer (passthrough for debug views)
+Overlay             (optional)  Back Buffer   ImGui
 ```
 
 ## Render graph (`graphics/rendergraph/`)
@@ -161,16 +181,20 @@ graph.AddPass(L"Sky",
   | `WriteColor(LoadOp)` | RENDER_TARGET |
   | `WriteDepth(LoadOp)` | DEPTH_WRITE |
   | `ReadDepth` | DEPTH_READ, with a read-only DSV |
-  | `ReadWriteTexture` | UAV |
+  | `ReadWriteTexture(t, mip)` | UAV, one mip or all |
+  | `ReadBuffer` / `ReadWriteBuffer` | SRV / UAV |
 
-  Several reads of one texture in one pass combine into one state.
+  Several reads of one resource in one pass combine into one state. `WriteDepth` takes an optional array slice, so
+  each cascade is its own pass with its own clear. Consecutive UAV accesses get a UAV barrier.
+- **Buffers.** `CreateBuffer`/`ImportBuffer` work like textures. Buffers decay to COMMON after each submit, so the
+  graph treats them as COMMON on their first use in a frame.
 - **Culling.** The graph walks the passes backwards.
   - A resource is *needed* if it is imported, or a later live pass reads it.
   - `LoadOp::Load` counts as a read.
   - A pass lives if it has side effects or writes something needed.
   - A full overwrite (`Clear`/`DontCare`) ends the need for earlier writers.
-- **Transients** get their usage flags from how live passes access them. They are taken from the `TexturePool`,
-  matched by size, format, usage and clear values. Resize needs no code: next frame asks for the new size, and old
+- **Transients** get their usage flags from how live passes access them. They are taken from the
+  `TransientResourcePool`, matched by size, format, usage and clear values (buffers: size, stride, usage). Resize needs no code: next frame asks for the new size, and old
   textures age out.
 - **Execution order** is declaration order. State tracking stays in `Texture` and `CommandContext`; the graph only
   decides *when* to transition.
@@ -185,19 +209,49 @@ graph.AddPass(L"Sky",
   It also keeps a submesh table (index range + material index into the model's materials) and local bounds.
 - **`Material`** holds `MaterialData`: glTF metallic-roughness factors, alpha mode and cutoff, double-sided, texture
   paths. It also holds the bindless SRV index of each of its 5 texture slots. Shaders see `MaterialGpuData`, 64 B.
-- **Vertex pulling.** `Mesh.hlsl` reads vertices by `SV_VertexID` from `ByteAddressBuffer`s. Only the index buffer
+- **Vertex pulling.** `Scene/SceneData.hlsli` reads vertices by `SV_VertexID` from `ByteAddressBuffer`s. Only the index buffer
   goes through the input assembler.
 - **Per draw:** root constants `{ drawIndex, drawBufferIndex, materialBufferIndex, positionBufferIndex,
-  attributeBufferIndex }`. `DrawData { world, normalMatrix, materialIndex }` and the material table are
-  `StructuredBuffer`s in the frame slot's upload memory.
-- **Shading (temporary until Phase 3):**
-  - base color x factor
-  - BC5 normal map with the Z channel rebuilt
-  - lambert sun + ambient x occlusion + emissive
-  - back faces of double-sided materials flip their tangent frame
-- **Depth.** The prepass writes depth (masked buckets `clip` against base color alpha). Opaque tests `EQUAL`,
+  attributeBufferIndex, viewBufferIndex, viewIndex }`. `DrawData { world, normalMatrix, materialIndex }`, the material
+  table and the `ViewData` array are `StructuredBuffer`s in the frame slot's memory. The same mesh shaders render the
+  camera and every shadow view; only `viewIndex` changes.
+- **Material evaluation** (`Scene/MaterialSurface.hlsli`) is shared by the GBuffer and transparent passes: base
+  color, BC5 normal map with Z rebuilt, metallic-roughness, occlusion, emissive. Back faces of double-sided
+  materials flip their tangent frame.
+- **Depth.** The prepass writes depth (masked buckets `clip` against base color alpha). The GBuffer tests `EQUAL`,
   read-only, with no alpha test. Both use one `precise` transform. Sky sits at z = 0 with `GREATER_EQUAL`, so it only
   covers cleared depth.
+
+## Lighting (`graphics/lighting/`, `shaders/Lighting/`)
+
+- **GBuffer** (`Scene/GBuffer.hlsli`):
+
+  | Target | Format | Contents |
+  |---|---|---|
+  | A | RGBA8 sRGB | base color, ambient occlusion |
+  | B | R10G10B10A2 | octahedral normal, shading model |
+  | C | RGBA8 | metallic, roughness |
+  | Scene Color | RGBA16F | emissive, then lighting is added |
+
+- **BRDF:** GGX distribution, height-correlated Smith visibility, Schlick Fresnel, Lambert diffuse
+  (`Lighting/BRDF.hlsli`). `Lighting/SurfaceLighting.hlsli` sums sun + clustered local lights + IBL. It is the only
+  lighting code: the deferred and transparent passes both call `EvaluateLighting`.
+- **Units.** Sun intensity is illuminance; light intensity is luminous intensity with inverse-square falloff windowed
+  to zero at `range`. The visible sun disk uses intensity / pi, so a lit white surface matches the sky's scale.
+- **Clustered lights.** A 16x9 screen grid x 24 logarithmic depth slices (0.1-500 m). `LightClustering.hlsl` runs
+  one group per cluster, tests every light's sphere against the cluster's view-space AABB, and stores up to 128
+  indices per cluster.
+- **Sun shadows.** 4 stable cascades (bounding sphere + texel snapping, practical split lambda), reverse-Z ortho,
+  depth clip off so casters behind the near plane pancake. Normal offset in texels + negative raster depth bias,
+  3x3 PCF with a comparison sampler (s4).
+- **Local shadows.** One 4096x4096 atlas with 512x512 tiles; spot lights take one tile, point lights six (cube faces
+  as 90-degree frusta). The shadowed lights nearest the camera get tiles first.
+- **IBL** (`SkyLight`). When the sun direction changes, the sky is captured into a 64x64 cube, projected to SH9
+  (pre-convolved for diffuse) and GGX-prefiltered into a 128x128 cube with 6 mips. A split-sum BRDF LUT is built once.
+- **`LightingConstants`** (b2, mirrored in `Lighting/LightingCommon.hlsli`) carry every index and parameter the
+  lighting code needs, so the deferred and transparent passes bind the same block.
+- **Debug views** (`RenderSettings::debugView`): base color, normals, roughness, metallic, AO, shadow cascades and
+  the light-count heat map. The deferred pass writes them, and tonemapping passes them through.
 
 ## Binding model (bindless)
 
@@ -207,8 +261,8 @@ There is one root signature for every pipeline (`BindlessRootSignature.h`):
 |---|---|---|
 | `RootConstants` | b0 | Up to 16 dwords per pass or draw, usually bindless indices |
 | `ViewConstants` | b1 | `ViewConstants`, bound once per frame |
-| `PassConstants` | b2 | Per-pass CBV for larger data (e.g. `OpaquePassConstants`) |
-| static samplers | s0–s3 | PointClamp, LinearClamp, LinearWrap, AnisotropicWrap |
+| `PassConstants` | b2 | Per-pass CBV for larger data (e.g. `LightingConstants`) |
+| static samplers | s0–s4 | PointClamp, LinearClamp, LinearWrap, AnisotropicWrap, ShadowCompare (GREATER_EQUAL) |
 
 ## Resource lifetime
 
@@ -218,7 +272,7 @@ There is one root signature for every pipeline (`BindlessRootSignature.h`):
 - **Swap-chain resize** flushes and calls `ReleaseAll()`, because DXGI needs every back-buffer reference gone.
 - **Static buffers** stay in COMMON. They rely on implicit promotion (copy dest, SRV, index buffer) and decay, so
   they need no barriers. Textures are tracked explicitly.
-- **Per-frame data** (constants, `DrawData`, materials) lives in memory owned by the current frame slot and is
+- **Per-frame data** (constants, `DrawData`, materials, views, lights) lives in memory owned by the current frame slot and is
   protected by the same fence wait as the command allocator.
 - **Asset uploads** run on the copy queue (`UploadQueue`). The CPU waits for its fence before any frame references the
   resource, so the copy and graphics queues never touch one resource at the same time. Destinations rely on COMMON
@@ -264,17 +318,24 @@ There is one root signature for every pipeline (`BindlessRootSignature.h`):
 | Materials | Per-frame material table + index per draw | Per-draw CBV; persistent material buffer | Unity SRP Batcher, Unreal persistent material data |
 | Alpha modes | Pipeline buckets; alpha test only in the depth prepass | Dynamic branching; full PSO keys | Unreal/HDRP masked depth prepass |
 | Debug UI | Dear ImGui behind `IOverlayRenderer` | Custom retained UI | Ubiquitous in engine tooling |
+| Lighting path | Deferred GBuffer + compute lighting | Forward+; visibility buffer | Unreal, HDRP, Frostbite are deferred; Doom 2016 is forward+ |
+| Light culling | Clustered (froxels) in compute | Tiled 2D; per-object lists | HDRP, Doom 2016, Unreal (forward) |
+| Sun shadows | 4 stable CSM, PCF | Virtual shadow maps; ray tracing | Unreal 5 VSM; Unity and HDRP CSM |
+| Local shadows | One depth atlas, a tile per face | Cube-map arrays | HDRP and Unreal atlases |
+| Ambient | Sky IBL: SH9 + prefiltered cube + BRDF LUT | Constant ambient; probes | Unity SH ambient, Unreal sky light |
+| Transparency | Forward pass, back to front, shared lighting code | Order-independent transparency | Most engines, including Unreal and HDRP |
 | Scene files | JSON, paths relative to the file | YAML (Unity), binary packages (Unreal), USD | |
 
 ## Known limits (intentional for now)
 
-- Lighting is a temporary lambert + sun + flat ambient. There are no shadows; metallic and roughness are loaded but
-  unused. Phase 3 brings deferred PBR, clustered lights and shadows.
-- `BLEND` materials render as alpha-tested until Phase 3 adds a sorted transparent pass.
+- Shadow maps are re-rendered every frame (no static caching); no contact shadows or soft penumbrae.
+- IBL comes from the analytic sky only: no reflection or irradiance probes, no specular occlusion.
+- Transparents are sorted per draw, not per triangle; one blend mode (alpha), no refraction.
+- At most 1,024 lights per frame and 128 per cluster; extra lights in a full cluster are dropped.
 - Textures embedded in `.glb` buffers or data URIs are not loaded yet; they fall back to white.
 - Texture compression is BC1/BC3/BC5 on the CPU; BC7 needs a GPU compressor.
 - The asset cache lives next to each executable, so Debug and Release cook separately. Stale cache files are not
   cleaned up.
 - No asset unloading or hot reload yet. Single-threaded command recording on one direct queue.
 - `GpuScene` holds at most 16,384 draws and 4,096 materials per frame, and logs a warning beyond that.
-- The render graph does not alias memory or reorder passes, and it only handles textures.
+- The render graph does not alias memory or reorder passes, and runs everything on the direct queue.

@@ -33,12 +33,31 @@ namespace atmos
         ModelHandle handle;
     };
 
+    enum class LightType : uint32_t
+    {
+        Point,
+        Spot,
+    };
+
+    // Positioned by the entity; spot lights shine along the entity's +Z.
+    struct LightComponent
+    {
+        LightType type = LightType::Point;
+        DirectX::XMFLOAT3 color{ 1.0f, 1.0f, 1.0f };
+        float intensity = 10.0f;  // luminous intensity (candela-like, same scale as the sun)
+        float range = 10.0f;      // meters; light falls off smoothly to zero here
+        float innerConeDegrees = 20.0f;
+        float outerConeDegrees = 30.0f;
+        bool castsShadows = false;
+    };
+
     struct Entity
     {
         std::string name;
         Transform transform;
         EntityId parent = InvalidEntity;
         std::optional<ModelComponent> model;
+        std::optional<LightComponent> light;
     };
 
     struct SceneEnvironment

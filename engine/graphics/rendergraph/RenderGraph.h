@@ -1,5 +1,6 @@
 #pragma once
 
+#include "graphics/d3d12/Buffer.h"
 #include "graphics/d3d12/Texture.h"
 
 #include <cstdint>
@@ -11,7 +12,7 @@ namespace atmos
 {
     class CommandContext;
     class RenderGraph;
-    class TexturePool;
+    class TransientResourcePool;
 
     struct RenderPassInfo
     {
@@ -19,8 +20,16 @@ namespace atmos
         bool culled = false;
     };
 
-    // Index of a texture in one frame's graph.
+    // Typed indices of resources in one frame's graph.
     struct RGTexture
+    {
+        static constexpr uint32_t InvalidIndex = UINT32_MAX;
+        uint32_t index = InvalidIndex;
+
+        bool IsValid() const { return index != InvalidIndex; }
+    };
+
+    struct RGBuffer
     {
         static constexpr uint32_t InvalidIndex = UINT32_MAX;
         uint32_t index = InvalidIndex;
@@ -43,6 +52,7 @@ namespace atmos
         RGContext(CommandContext& commands, const RenderGraph& graph) : commands(commands), graph_(graph) {}
 
         Texture& GetTexture(RGTexture handle) const;
+        Buffer& GetBuffer(RGBuffer handle) const;
 
         CommandContext& commands;
 
@@ -51,15 +61,21 @@ namespace atmos
     };
 
     // Declares how a pass uses resources. Only valid inside the setup callback.
+    // `subresource` is a depth slice (WriteDepth) or a mip (ReadWriteTexture); writing a single
+    // subresource never counts as overwriting the whole resource.
     class RGBuilder
     {
     public:
-        RGTexture ReadTexture(RGTexture texture);                       // SRV in any shader stage
-        RGTexture WriteColor(RGTexture texture, LoadOp loadOp);         // render target
-        RGTexture WriteDepth(RGTexture texture, LoadOp loadOp);         // depth test + write
-        RGTexture ReadDepth(RGTexture texture);                         // depth test only
-        RGTexture ReadWriteTexture(RGTexture texture);                  // UAV
-        void SetSideEffects();                                          // never culled
+        static constexpr uint32_t All = Texture::AllSubresources;
+
+        RGTexture ReadTexture(RGTexture texture);
+        RGTexture WriteColor(RGTexture texture, LoadOp loadOp);
+        RGTexture WriteDepth(RGTexture texture, LoadOp loadOp, uint32_t slice = All);
+        RGTexture ReadDepth(RGTexture texture);
+        RGTexture ReadWriteTexture(RGTexture texture, uint32_t mip = All);
+        RGBuffer ReadBuffer(RGBuffer buffer);
+        RGBuffer ReadWriteBuffer(RGBuffer buffer);
+        void SetSideEffects();
 
     private:
         friend class RenderGraph;
@@ -69,21 +85,24 @@ namespace atmos
         size_t passIndex_;
     };
 
-    // Per-frame graph: passes declare accesses in setup and record commands in execute.
-    // Execute() culls unused passes, allocates transients, then transitions and binds targets.
+    // Per-frame graph (Frostbite FrameGraph / Unity RenderGraph style): passes declare accesses in
+    // setup and record commands in execute. Execute() culls passes whose results are unused, takes
+    // transients from the pool, inserts transitions and UAV barriers, then binds and clears targets.
     class RenderGraph
     {
     public:
-        explicit RenderGraph(TexturePool& texturePool);
+        explicit RenderGraph(TransientResourcePool& pool);
 
         RenderGraph(const RenderGraph&) = delete;
         RenderGraph& operator=(const RenderGraph&) = delete;
 
-        // Transient texture; usage flags are derived from how passes access it.
+        // Transient resources; usage flags are derived from how passes access them.
         RGTexture CreateTexture(const TextureDesc& desc);
+        RGBuffer CreateBuffer(const BufferDesc& desc);
 
-        // External texture (e.g. back buffer). It is left in `finalState` after Execute.
+        // Persistent resources (back buffer, IBL, history). Left in `finalState` after Execute.
         RGTexture ImportTexture(Texture& texture, D3D12_RESOURCE_STATES finalState);
+        RGBuffer ImportBuffer(Buffer& buffer);
 
         template <typename Setup, typename Execute>
         void AddPass(std::wstring name, Setup&& setup, Execute&& execute)
@@ -96,7 +115,6 @@ namespace atmos
 
         void Execute(CommandContext& commands);
 
-        // Logs passes, their accesses and textures.
         void LogSummary() const;
 
         // Valid after Execute().
@@ -117,9 +135,10 @@ namespace atmos
 
         struct PassAccess
         {
-            RGTexture texture;
+            uint32_t resource;
             Access access;
             LoadOp loadOp;
+            uint32_t subresource;
         };
 
         struct Pass
@@ -133,22 +152,29 @@ namespace atmos
 
         struct Resource
         {
-            TextureDesc desc;
+            bool isBuffer = false;
+            TextureDesc textureDesc;
+            BufferDesc bufferDesc;
             Texture* texture = nullptr;  // Set on import or first use.
+            Buffer* buffer = nullptr;
             bool imported = false;
             D3D12_RESOURCE_STATES finalState = D3D12_RESOURCE_STATE_COMMON;
+            bool lastAccessWasUav = false;
+            bool usedThisFrame = false;
         };
 
-        void AddAccess(size_t passIndex, RGTexture texture, Access access, LoadOp loadOp);
+        void AddAccess(size_t passIndex, uint32_t resource, Access access, LoadOp loadOp, uint32_t subresource);
         void CullPasses();
         void DeriveTransientUsage();
-        Texture& ResolveTexture(RGTexture handle);
+        Resource& Resolve(uint32_t resource);
         void ExecutePass(Pass& pass, CommandContext& commands);
+        const std::wstring& GetName(const Resource& resource) const;
 
-        static bool ReadsPreviousContents(const PassAccess& access);
         static bool Writes(const PassAccess& access);
+        static bool OverwritesWholeResource(const PassAccess& access);
+        static bool ReadsPreviousContents(const PassAccess& access);
 
-        TexturePool& texturePool_;
+        TransientResourcePool& pool_;
         std::vector<Resource> resources_;
         std::vector<Pass> passes_;
     };

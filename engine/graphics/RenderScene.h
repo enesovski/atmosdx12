@@ -1,5 +1,7 @@
 #pragma once
 
+#include "graphics/RenderSettings.h"
+
 #include <DirectXMath.h>
 
 #include <cmath>
@@ -44,11 +46,32 @@ namespace atmos
         DirectX::XMFLOAT4X4 world{};
     };
 
+    enum class RenderLightType : uint32_t
+    {
+        Point,
+        Spot,
+    };
+
+    struct RenderLight
+    {
+        RenderLightType type = RenderLightType::Point;
+        DirectX::XMFLOAT3 position{};
+        DirectX::XMFLOAT3 direction{ 0.0f, 0.0f, 1.0f };
+        DirectX::XMFLOAT3 color{ 1.0f, 1.0f, 1.0f };
+        float intensity = 0.0f;
+        float range = 0.0f;
+        float innerConeDegrees = 0.0f;
+        float outerConeDegrees = 0.0f;
+        bool castsShadows = false;
+    };
+
     // Renderer-facing world description, rebuilt every frame by runtime/RenderSceneBuilder.
     struct RenderScene
     {
         SkyEnvironment sky;
         PostProcessSettings postProcess;
+        RenderSettings settings;
         std::vector<MeshInstance> meshInstances;
+        std::vector<RenderLight> lights;
     };
 }

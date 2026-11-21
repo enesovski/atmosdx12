@@ -15,8 +15,9 @@ namespace atmos
     public:
         TonemapPass(const GraphicsDevice& device, const ShaderCompiler& compiler, DXGI_FORMAT outputFormat);
 
-        void AddToGraph(RenderGraph& graph, const PostProcessSettings& settings, RGTexture sceneColor,
-                        RGTexture output) const;
+        // `passthroughDebugView` skips the tone curve so debug views show raw values.
+        void AddToGraph(RenderGraph& graph, const PostProcessSettings& settings, RGTexture sceneColor, RGTexture output,
+                        bool passthroughDebugView) const;
 
     private:
         PipelineState pipeline_;

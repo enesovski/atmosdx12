@@ -1,6 +1,24 @@
 # Phase 3 plan: lighting and shadows
 
-**Status:** planned, not implemented.
+**Status:** ✅ implemented.
+
+**Verification** (RTX 4060 Laptop):
+
+- `/W4` Debug and Release builds have no warnings.
+- GPU-based validation runs clean with 37 lights.
+- Release with 133 lights, 3 of them shadowed, at about 1540x845: 2.8 ms GPU.
+- Sun cascades, colored local lights, the light-count heat map and window resize were checked on screen.
+- Sponza has no `BLEND` materials, so the transparent pass is culled there; it has not been seen on screen yet.
+
+**Deviations from this plan:**
+
+- The sun stays in `SceneEnvironment` (azimuth, elevation, intensity) rather than becoming a directional light
+  component. Only point and spot lights are entities.
+- PCF is a 3x3 tent of hardware comparisons, not a wider Poisson kernel.
+- One transparent PSO with culling off covers single- and double-sided materials.
+- Shadow maps are not cached between frames, and there are no motion vectors yet (Phase 4 TAA needs them).
+- `SceneRenderer` was added between `Renderer` (frame loop, GPU) and the passes, so the renderer stays a frame
+  driver and what is drawn lives in one place.
 
 **Goal:** replace the temporary forward lambert pass with physically based deferred lighting. That means many lights,
 sun shadows, image-based lighting from the sky, and a sorted pass for transparent materials.

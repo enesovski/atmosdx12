@@ -8,7 +8,7 @@
 
 namespace atmos
 {
-    // Mirrors the attribute stream layout read in Mesh.hlsl (36 bytes per vertex).
+    // Mirrors the attribute stream layout read in shaders/Scene/SceneData.hlsli (36 bytes per vertex).
     struct VertexAttributes
     {
         DirectX::XMFLOAT3 normal;

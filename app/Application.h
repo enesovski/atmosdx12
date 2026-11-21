@@ -11,6 +11,7 @@
 #include "scene/Camera.h"
 #include "scene/Scene.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 
@@ -26,6 +27,7 @@ struct AppOptions
     atmos::GraphicsDeviceOptions device;
     std::filesystem::path scenePath;  // .json scene or a single .gltf/.glb; empty: scenes/sponza.json
     bool dumpFrame = false;
+    uint32_t spawnLights = 0;  // extra random point lights, for stress-testing the light grid
 };
 
 class Application
@@ -48,6 +50,7 @@ private:
 
     void LoadScene(const std::filesystem::path& path);
     void SaveScene();
+    void SpawnLights(uint32_t count);
 
     atmos::Input input_;
     atmos::Window window_;
@@ -59,6 +62,7 @@ private:
     atmos::Scene scene_;
     std::filesystem::path scenePath_;  // where F5 saves; empty for a directly loaded model
     atmos::RenderScene renderScene_;
+    atmos::RenderSettings renderSettings_;
 
     // Declared after the renderer so they are destroyed first.
     std::unique_ptr<atmos::Renderer> renderer_;

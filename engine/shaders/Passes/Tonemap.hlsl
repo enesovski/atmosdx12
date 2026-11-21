@@ -5,6 +5,7 @@ struct TonemapConstants
 {
     uint hdrTextureIndex;
     float exposure;
+    uint passthrough;  // debug views show raw values
 };
 
 ConstantBuffer<TonemapConstants> Constants : register(b0);
@@ -27,7 +28,7 @@ float4 PSMain(FullscreenVertex input) : SV_Target
 
     // Input and output share a resolution, so load the matching texel directly.
     float3 hdrColor = hdrTexture.Load(int3(input.position.xy, 0)).rgb;
-    float3 mapped = 1.0 - exp(-hdrColor * Constants.exposure);
+    float3 mapped = Constants.passthrough ? hdrColor : 1.0 - exp(-hdrColor * Constants.exposure);
 
     return float4(LinearToSRGB(saturate(mapped)), 1.0);
 }

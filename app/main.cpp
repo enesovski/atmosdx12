@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 
+#include <cstdlib>
 #include <exception>
 #include <string_view>
 
@@ -10,6 +11,7 @@ namespace
     // --scene <file>     .json scene or a single .gltf/.glb (default: scenes/sponza.json)
     // --dump-frame       log the first frame's render graph and culling stats
     // --gpu-validation   D3D12 GPU-based validation (slow)
+    // --spawn-lights N   add N random point lights to the scene
     AppOptions ParseCommandLine(int argc, char* argv[])
     {
         AppOptions options;
@@ -24,6 +26,8 @@ namespace
                 options.dumpFrame = true;
             else if (argument == "--scene" && i + 1 < argc)
                 options.scenePath = argv[++i];
+            else if (argument == "--spawn-lights" && i + 1 < argc)
+                options.spawnLights = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
             else
                 atmos::log::Warning("Unknown argument: {}", argument);
         }

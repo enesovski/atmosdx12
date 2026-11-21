@@ -7,6 +7,25 @@ using namespace DirectX;
 
 namespace atmos
 {
+    namespace
+    {
+        void AddLight(const LightComponent& light, const XMFLOAT4X4& world, RenderScene& out)
+        {
+            const XMMATRIX matrix = XMLoadFloat4x4(&world);
+
+            RenderLight& renderLight = out.lights.emplace_back();
+            renderLight.type = light.type == LightType::Spot ? RenderLightType::Spot : RenderLightType::Point;
+            XMStoreFloat3(&renderLight.position, matrix.r[3]);
+            XMStoreFloat3(&renderLight.direction, XMVector3Normalize(matrix.r[2]));
+            renderLight.color = light.color;
+            renderLight.intensity = light.intensity;
+            renderLight.range = light.range;
+            renderLight.innerConeDegrees = light.innerConeDegrees;
+            renderLight.outerConeDegrees = light.outerConeDegrees;
+            renderLight.castsShadows = light.castsShadows;
+        }
+    }
+
     void RequestSceneAssets(Scene& scene, AssetManager& assets)
     {
         for (Entity& entity : scene.GetEntities())
@@ -23,12 +42,16 @@ namespace atmos
         out.sky.sunIntensity = scene.environment.sunIntensity;
         out.postProcess.exposure = scene.environment.exposure;
         out.meshInstances.clear();
+        out.lights.clear();
 
         const std::vector<XMFLOAT4X4> worldMatrices = scene.ComputeWorldMatrices();
         const std::span<const Entity> entities = scene.GetEntities();
 
         for (size_t i = 0; i < entities.size(); ++i)
         {
+            if (entities[i].light)
+                AddLight(*entities[i].light, worldMatrices[i], out);
+
             if (!entities[i].model)
                 continue;
 

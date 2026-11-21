@@ -12,7 +12,7 @@ hold.
 | 0 | Foundation refactor | ✅ done |
 | 1 | Render graph v1 and first geometry | ✅ done ([plan and decisions](docs/phase-1-plan.md)) |
 | 2 | Scene, assets, and materials | ✅ done ([decisions](docs/phase-2-plan.md)) |
-| 3 | Lighting and shadows (deferred + clustered) | planned: [docs/phase-3-plan.md](docs/phase-3-plan.md) |
+| 3 | Lighting and shadows (deferred + clustered) | ✅ done ([plan and decisions](docs/phase-3-plan.md)) |
 | 4 | Physically based atmosphere and post-processing | |
 | 5 | GPU-driven rendering and performance | |
 | 6 | Content features and engine polish | |
@@ -145,7 +145,7 @@ materials, and an ImGui overlay. See [docs/phase-2-plan.md](docs/phase-2-plan.md
 **Done when:** a scene file with many glTF models and materials loads asynchronously and renders with correct
 textures, and the debug overlay shows per-pass stats.
 
-## Phase 3: lighting and shadows
+## Phase 3: lighting and shadows ✅ done
 
 Planned in detail, with each decision's alternatives: [docs/phase-3-plan.md](docs/phase-3-plan.md).
 

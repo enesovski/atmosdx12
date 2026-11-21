@@ -8,17 +8,17 @@ namespace atmos
 {
     namespace
     {
-        // Mirrors SkyConstants in Sky.hlsl.
+        // Mirrors SkyConstants in Passes/Sky.hlsl.
         struct SkyConstants
         {
             DirectX::XMFLOAT3 sunDirection;
-            float sunIntensity;
+            float sunDiskIntensity;
         };
 
         PipelineState CreatePipeline(const GraphicsDevice& device, const ShaderCompiler& compiler)
         {
-            const auto vertexShader = compiler.Compile(L"Sky.hlsl", L"VSMain", ShaderStage::Vertex);
-            const auto pixelShader = compiler.Compile(L"Sky.hlsl", L"PSMain", ShaderStage::Pixel);
+            const auto vertexShader = compiler.Compile(L"Passes/Sky.hlsl", L"VSMain", ShaderStage::Vertex);
+            const auto pixelShader = compiler.Compile(L"Passes/Sky.hlsl", L"PSMain", ShaderStage::Pixel);
 
             // Sky depth is 0 (far plane); GREATER_EQUAL passes only where depth is still cleared to 0.
             return PipelineState::CreateGraphics(device, {
@@ -40,7 +40,8 @@ namespace atmos
     void SkyPass::AddToGraph(RenderGraph& graph, const SkyEnvironment& sky, RGTexture depth,
                              RGTexture sceneColor) const
     {
-        const SkyConstants constants{ sky.GetSunDirection(), sky.sunIntensity };
+        // The sun's intensity is an illuminance; the disk is drawn as radiance (divide by PI).
+        const SkyConstants constants{ sky.GetSunDirection(), sky.sunIntensity / DirectX::XM_PI };
 
         graph.AddPass(L"Sky",
             [&](RGBuilder& builder) {

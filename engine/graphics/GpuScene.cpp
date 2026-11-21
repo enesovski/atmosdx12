@@ -1,12 +1,11 @@
 #include "graphics/GpuScene.h"
 #include "graphics/Frustum.h"
-#include "graphics/Material.h"
 #include "graphics/Mesh.h"
 #include "graphics/RenderScene.h"
 #include "graphics/d3d12/CommandContext.h"
 #include "core/Log.h"
 
-#include <format>
+#include <algorithm>
 
 using namespace DirectX;
 
@@ -16,59 +15,52 @@ namespace atmos
     {
         DrawBucket GetBucket(const MaterialData& material)
         {
-            const bool masked = material.alphaMode != AlphaMode::Opaque;
-
-            if (masked)
-                return material.doubleSided ? DrawBucket::MaskedDoubleSided : DrawBucket::Masked;
-
-            return material.doubleSided ? DrawBucket::OpaqueDoubleSided : DrawBucket::Opaque;
+            switch (material.alphaMode)
+            {
+                case AlphaMode::Blend:
+                    return DrawBucket::Transparent;
+                case AlphaMode::Mask:
+                    return material.doubleSided ? DrawBucket::MaskedDoubleSided : DrawBucket::Masked;
+                default:
+                    return material.doubleSided ? DrawBucket::OpaqueDoubleSided : DrawBucket::Opaque;
+            }
         }
+    }
+
+    void DrawList::Clear()
+    {
+        for (std::vector<uint32_t>& bucket : buckets)
+            bucket.clear();
+    }
+
+    uint32_t DrawList::GetDrawCount() const
+    {
+        size_t count = 0;
+
+        for (const std::vector<uint32_t>& bucket : buckets)
+            count += bucket.size();
+
+        return static_cast<uint32_t>(count);
     }
 
     GpuScene::GpuScene(GraphicsDevice& device)
+        : drawData_(device, MaxDraws, L"Draw Data"), materials_(device, MaxMaterials, L"Material Data")
     {
-        for (uint32_t i = 0; i < GraphicsConfig::FramesInFlight; ++i)
-        {
-            drawBuffers_[i] = Buffer(device, {
-                .size = MaxDraws * sizeof(DrawData),
-                .stride = sizeof(DrawData),
-                .memory = BufferMemory::Upload,
-                .debugName = std::format(L"Draw Data {}", i),
-            });
-
-            materialBuffers_[i] = Buffer(device, {
-                .size = MaxMaterials * sizeof(MaterialGpuData),
-                .stride = sizeof(MaterialGpuData),
-                .memory = BufferMemory::Upload,
-                .debugName = std::format(L"Material Data {}", i),
-            });
-        }
+        draws_.reserve(MaxDraws);
     }
 
-    void GpuScene::Update(uint32_t frameIndex, const RenderScene& scene, const Frustum& frustum)
+    void GpuScene::Update(uint32_t frameIndex, const RenderScene& scene)
     {
         frameIndex_ = frameIndex;
         stats_ = { .instances = static_cast<uint32_t>(scene.meshInstances.size()) };
+        draws_.clear();
         materialSlots_.clear();
 
-        for (std::vector<MeshDraw>& bucket : buckets_)
-            bucket.clear();
-
-        auto* drawData = reinterpret_cast<DrawData*>(drawBuffers_[frameIndex].GetMappedData());
+        DrawData* drawData = drawData_.GetMappedData(frameIndex);
 
         for (const MeshInstance& instance : scene.meshInstances)
         {
             const XMMATRIX world = XMLoadFloat4x4(&instance.world);
-
-            BoundingBox worldBounds;
-            instance.mesh->GetLocalBounds().Transform(worldBounds, world);
-
-            if (!frustum.Intersects(worldBounds))
-            {
-                ++stats_.culledInstances;
-                continue;
-            }
-
             XMFLOAT4X4 normalMatrix;
             XMStoreFloat4x4(&normalMatrix, XMMatrixTranspose(XMMatrixInverse(nullptr, world)));
 
@@ -76,23 +68,24 @@ namespace atmos
 
             for (uint32_t s = 0; s < submeshes.size(); ++s)
             {
-                if (stats_.draws == MaxDraws || submeshes[s].materialIndex >= instance.materials.size())
+                if (draws_.size() == MaxDraws || submeshes[s].materialIndex >= instance.materials.size())
                 {
                     if (!overflowReported_)
-                        log::Warning("GpuScene: draw dropped (draw limit {} or missing material)", MaxDraws);
+                        log::Warning("GpuScene: draw dropped (limit {} or missing material)", MaxDraws);
 
                     overflowReported_ = true;
                     continue;
                 }
 
                 const Material& material = *instance.materials[submeshes[s].materialIndex];
-                const uint32_t drawIndex = stats_.draws++;
+                drawData[draws_.size()] = { instance.world, normalMatrix, GetMaterialSlot(material), {} };
 
-                drawData[drawIndex] = { instance.world, normalMatrix, GetMaterialSlot(material), {} };
-                buckets_[static_cast<size_t>(GetBucket(material.data))].push_back({ instance.mesh, s, drawIndex });
+                DrawRecord& record = draws_.emplace_back(DrawRecord{ instance.mesh, s, GetBucket(material.data), {} });
+                instance.mesh->GetSubmeshBounds(s).Transform(record.worldBounds, world);
             }
         }
 
+        stats_.draws = static_cast<uint32_t>(draws_.size());
         stats_.materials = static_cast<uint32_t>(materialSlots_.size());
     }
 
@@ -109,21 +102,51 @@ namespace atmos
                 return 0;
             }
 
-            auto* materials = reinterpret_cast<MaterialGpuData*>(materialBuffers_[frameIndex_].GetMappedData());
-            materials[entry->second] = material.ToGpuData();
+            materials_.GetMappedData(frameIndex_)[entry->second] = material.ToGpuData();
         }
 
         return entry->second;
     }
 
-    void GpuScene::RecordDraws(CommandContext& commands, DrawBucket bucket) const
+    void GpuScene::Cull(const Frustum& frustum, DrawList& out, bool includeTransparent) const
     {
-        const uint32_t drawBufferIndex = drawBuffers_[frameIndex_].GetSrvIndex();
-        const uint32_t materialBufferIndex = materialBuffers_[frameIndex_].GetSrvIndex();
+        out.Clear();
+
+        for (uint32_t i = 0; i < draws_.size(); ++i)
+        {
+            const DrawRecord& draw = draws_[i];
+
+            if (draw.bucket == DrawBucket::Transparent && !includeTransparent)
+                continue;
+
+            if (frustum.Intersects(draw.worldBounds))
+                out.buckets[static_cast<size_t>(draw.bucket)].push_back(i);
+        }
+    }
+
+    void GpuScene::SortTransparentBackToFront(DrawList& list, const XMFLOAT3& eye) const
+    {
+        const XMVECTOR eyePosition = XMLoadFloat3(&eye);
+
+        auto distanceSquared = [&](uint32_t drawIndex) {
+            return XMVectorGetX(XMVector3LengthSq(XMLoadFloat3(&draws_[drawIndex].worldBounds.Center) - eyePosition));
+        };
+
+        std::ranges::sort(list.buckets[static_cast<size_t>(DrawBucket::Transparent)],
+                          [&](uint32_t a, uint32_t b) { return distanceSquared(a) > distanceSquared(b); });
+    }
+
+    void GpuScene::RecordDraws(CommandContext& commands, const DrawList& list, DrawBucket bucket, uint32_t viewBufferIndex,
+                               uint32_t viewIndex) const
+    {
+        const uint32_t drawBufferIndex = GetDrawBufferIndex();
+        const uint32_t materialBufferIndex = GetMaterialBufferIndex();
         const Mesh* boundMesh = nullptr;
 
-        for (const MeshDraw& draw : buckets_[static_cast<size_t>(bucket)])
+        for (uint32_t drawIndex : list[bucket])
         {
+            const DrawRecord& draw = draws_[drawIndex];
+
             if (draw.mesh != boundMesh)
             {
                 commands.SetIndexBuffer(draw.mesh->GetIndexBuffer());
@@ -131,11 +154,13 @@ namespace atmos
             }
 
             commands.SetRootConstants(MeshRootConstants{
-                draw.drawIndex,
+                drawIndex,
                 drawBufferIndex,
                 materialBufferIndex,
                 draw.mesh->GetPositionBuffer().GetSrvIndex(),
                 draw.mesh->GetAttributeBuffer().GetSrvIndex(),
+                viewBufferIndex,
+                viewIndex,
             });
 
             const Submesh& submesh = draw.mesh->GetSubmeshes()[draw.submeshIndex];

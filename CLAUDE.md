@@ -8,7 +8,7 @@ AtmosDX12 is a C++20 / Direct3D 12 / HLSL (SM 6.6) render engine in development,
 Unreal's rendering layer. `engine/` builds the `AtmosEngine` static library and `app/` builds the `AtmosDX12`
 executable that drives it.
 
-**ROADMAP.md is the plan of record.** Phases 0-2 are done; Phase 3 (lighting and shadows) is next. Each phase's
+**ROADMAP.md is the plan of record.** Phases 0-3 are done; Phase 4 (atmosphere and post-processing) is next. Each phase's
 decisions are recorded in `docs/phase-N-plan.md`. Follow
 the roadmap's order and its "done when" criteria, and say so when a task conflicts with it. ARCHITECTURE.md
 describes the current structure and records each design decision with its alternatives. Keep both in sync when the
@@ -33,6 +33,7 @@ cmake --build build --config Debug
   - F5 saves the scene, including the current camera, back to its `.json`.
 - `--dump-frame` logs the first frame's render graph (live and culled passes) and culling stats.
 - `--gpu-validation` turns on GPU-based validation.
+- `--spawn-lights N` adds N random point lights.
 
 **Build notes:**
 
@@ -45,6 +46,9 @@ cmake --build build --config Debug
 - **Third-party code** comes through CMake `FetchContent`, pinned to a tag, in `engine/ThirdParty.cmake`: cgltf,
   nlohmann/json, DirectXTex and Dear ImGui. The first configure needs network access. DirectXTex is built with `/O2`
   even in Debug, because BC compression is unusably slow otherwise.
+- **Shader layout:** `Common.hlsli` (view constants, samplers), `Scene/` (draw and material loading, GBuffer
+  encoding), `Lighting/` (BRDF, clusters, shadows, IBL, and `SurfaceLighting.hlsli`, the one lighting function
+  shared by deferred and transparent), `Sky/`, and `Passes/` (one entry-point file per pass).
 - **Shaders:** `AtmosDX12RuntimeFiles` copies `engine/shaders/` and the SDK's `dxcompiler.dll`/`dxil.dll` next to the
   exe on every build. Shaders compile at startup, so HLSL errors are startup exceptions. After editing a shader,
   rebuild (to copy it) and restart.
@@ -75,32 +79,37 @@ app/ → runtime/ (AssetManager, RenderSceneBuilder) → graphics/Renderer → p
 
 - b0: root constants, at most 16 dwords
 - b1: `ViewConstants`
-- b2: optional per-pass CBV
-- s0–s3: static samplers
+- b2: optional per-pass CBV (`LightingConstants` for lighting passes)
+- s0–s4: static samplers (s4 is the shadow comparison sampler)
 
 Textures and buffers are never bound. Shaders read `ResourceDescriptorHeap[index]`, with indices passed in root
 constants. Mesh vertices are pulled from `ByteAddressBuffer`s; there are no input layouts.
 
-**Writing a pass.** Follow `SkyPass`/`OpaquePass`:
+**Writing a pass.** Follow `SkyPass`/`GBufferPass`:
 
 - **Constructor:** builds the PSO with `PipelineState::CreateGraphics(device, { .debugName, .vertexShader, ... })`.
   The designated-initializer fields must stay in declaration order.
 - **Interface:** `AddToGraph(RenderGraph&, inputs..., RGTexture handles...) const` adds one graph pass.
-- **Setup lambda:** only declares accesses (`ReadTexture`, `WriteColor(LoadOp)`, `WriteDepth(LoadOp)`, `ReadDepth`,
-  `ReadWriteTexture`).
+- **Setup lambda:** only declares accesses (`ReadTexture`, `WriteColor(LoadOp)`, `WriteDepth(LoadOp, slice)`,
+  `ReadDepth`, `ReadWriteTexture(mip)`, `ReadBuffer`, `ReadWriteBuffer`).
 - **Execute lambda:** only records commands (`SetPipeline`, root constants, draws). It captures handles and data by
   value, and `this` for the PSO.
 - **Never bind targets, transition, or clear inside a pass**; the graph does that from the declarations.
-- **New render targets:** create them with `graph.CreateTexture(desc)` in `Renderer::BuildFrameGraph`. Don't add them
-  as members. Import only external textures.
+- **New render targets and buffers:** create them with `graph.CreateTexture`/`CreateBuffer`, either in
+  `SceneRenderer::AddPasses` or inside the pass that owns the output (which returns the handles). Don't add them as
+  members. Import only persistent resources (back buffer, `SkyLight`'s cubes).
+- **Where passes go:** `SceneRenderer` owns the passes and the frame's pass order; `Renderer` only runs the frame
+  loop.
 - **Mirrored structs:** root-constant/CBV structs live in the pass `.cpp`, with a `// Mirrors ...` twin in the HLSL.
-- **Mesh passes:** set a pipeline per `DrawBucket`, then call `GpuScene::RecordDraws(commands, bucket)`. Masked
-  buckets alpha-test only in the depth prepass; later passes use `EQUAL` depth.
+- **Mesh passes:** set a pipeline per `DrawBucket`, then call `GpuScene::RecordDraws(commands, drawList, bucket,
+  viewBufferIndex, viewIndex)` with a `DrawList` culled for that view. Masked buckets alpha-test only in the depth
+  prepass; later passes use `EQUAL` depth.
 
 **Frame and lifetime rules.**
 
 - `FrameScheduler::BeginFrame` returns a frame slot (0..`FramesInFlight-1`), separate from the back-buffer index.
-  Its fence guards that slot's allocator, `UploadAllocator` region, and `GpuScene` draw and material buffers.
+  Its fence guards that slot's allocator, `UploadAllocator` region, and every `FrameStructuredBuffer` (draws,
+  materials, views, lights).
 - Per-frame constants go through `CommandContext::SetRootConstants`, `SetConstantBuffer`, or
   `SetGlobalConstantBuffer`.
 - Destroying a `Texture`/`Buffer` is always safe: it goes through the device's `DeferredReleaseQueue`. Only
@@ -118,8 +127,9 @@ constants. Mesh vertices are pulled from `ByteAddressBuffer`s; there are no inpu
 - **Depth:** reverse-Z infinite projection, near = 1, far = 0. Use `GREATER_EQUAL` (`EQUAL` after the prepass) and
   clear to 0.
 - **Matrices:** row-major with row vectors on CPU and GPU (DXC `-Zpr`, `mul(v, M)`).
-- **Mirrored types:** `ShaderInterop.h`/`Common.hlsli`, `GpuScene.h` + `Material.h`/`Mesh.hlsl`, and
-  `MeshData.h`'s `VertexAttributes` are mirrored types. Change both sides together, and bump the model
+- **Mirrored types:** `ShaderInterop.h`/`Common.hlsli` + `Scene/ViewData.hlsli`, `GpuScene.h` +
+  `Material.h`/`Scene/SceneData.hlsli`, `lighting/LightingTypes.h`/`Lighting/LightingCommon.hlsli`,
+  `RenderSettings.h`'s `DebugView`, and `MeshData.h`'s `VertexAttributes` are mirrored types. Change both sides together, and bump the model
   `FormatVersion` when the vertex layout changes.
 - **Errors:** `ThrowIfFailed(hr, "what")` throws `DxException` with the HRESULT and call site. `ATMOS_ASSERT` is for
   programmer errors. Logging uses `log::Info/Warning/Error` with `std::format` syntax.

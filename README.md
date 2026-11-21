@@ -53,6 +53,7 @@ textures pop in as they finish. Later launches load the cooked files from `build
 | `--scene file` | Load a `.json` scene, or a single `.gltf`/`.glb` model |
 | `--dump-frame` | Print the first frame's render graph and culling stats |
 | `--gpu-validation` | D3D12 GPU-based validation (slow) |
+| `--spawn-lights N` | Add N random point lights (stress test for the light grid) |
 
 | Input | Action |
 |---|---|
@@ -62,7 +63,7 @@ textures pop in as they finish. Later launches load the cooked files from `build
 | RMB + Shift | Move faster |
 | RMB + mouse wheel | Change fly speed |
 | Mouse wheel | Field of view |
-| F1 | Show/hide the debug UI (stats, render graph, asset progress, sun and exposure sliders) |
+| F1 | Show/hide the debug UI: CPU/GPU time, sun and exposure, render settings and debug views, light editor, render graph, assets |
 | F5 | Save the scene, including the current camera as its start view |
 
 From Blender, export with **File → Export → glTF 2.0**, then add the file to a scene's `entities` or open it with
@@ -73,17 +74,22 @@ From Blender, export with **File → Export → glTF 2.0**, then add the file to
 ```json
 {
   "version": 1,
-  "environment": { "sunAzimuthDegrees": 115, "sunElevationDegrees": 60, "sunIntensity": 2.5, "exposure": 1 },
+  "environment": { "sunAzimuthDegrees": 115, "sunElevationDegrees": 60, "sunIntensity": 8, "exposure": 1 },
   "camera": { "position": [-7.5, 2.2, -0.3], "yawDegrees": 90, "pitchDegrees": 8, "fovDegrees": 65 },
   "entities": [
     { "name": "Sponza", "parent": -1, "position": [0, 0, 0], "rotationDegrees": [0, 0, 0], "scale": [1, 1, 1],
-      "model": "../assets/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf" }
+      "model": "../assets/glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf" },
+    { "name": "Fire", "parent": -1, "position": [-9.5, 1.2, 3.8], "rotationDegrees": [0, 0, 0], "scale": [1, 1, 1],
+      "light": { "type": "point", "color": [1, 0.55, 0.25], "intensity": 12, "range": 8, "castsShadows": true } }
   ]
 }
 ```
 
 - **Model paths** are relative to the scene file.
 - **`parent`** is an index into `entities`, or -1 for none. A parent must come before its children.
+- **`light`** makes an entity a `"point"` or `"spot"` light: `color`, `intensity`, `range` (meters), `castsShadows`,
+  and for spots `innerConeDegrees`/`outerConeDegrees`. A spot shines along the entity's +Z (rotate it with
+  `rotationDegrees`). `sunIntensity` is the sun's illuminance on the same scale.
 
 ## Layout
 

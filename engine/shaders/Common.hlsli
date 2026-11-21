@@ -3,10 +3,12 @@
 
 // Bindings of the engine-wide root signature (graphics/d3d12/BindlessRootSignature.h):
 //   b0 root constants (declared per shader), b1 view constants, b2 pass constants,
-//   s0-s3 static samplers. Textures/buffers come from ResourceDescriptorHeap[index].
-// Matrices are row-major (-Zpr): mul(vector, matrix).
+//   s0-s4 static samplers. Textures/buffers come from ResourceDescriptorHeap[index].
+// Matrices are row-major (-Zpr): mul(vector, matrix). Depth is reverse-Z (near = 1, far = 0).
 
-// Mirrors atmos::ViewConstants (graphics/ShaderInterop.h).
+static const float PI = 3.14159265359;
+
+// Mirrors atmos::ViewConstants (graphics/ShaderInterop.h). Always the camera.
 struct ViewConstants
 {
     float4x4 view;
@@ -25,6 +27,7 @@ SamplerState PointClamp : register(s0);
 SamplerState LinearClamp : register(s1);
 SamplerState LinearWrap : register(s2);
 SamplerState AnisotropicWrap : register(s3);
+SamplerComparisonState ShadowCompare : register(s4);
 
 struct FullscreenVertex
 {
@@ -41,12 +44,27 @@ FullscreenVertex MakeFullscreenVertex(uint vertexId)
     return output;
 }
 
+float2 UvToNdc(float2 uv)
+{
+    return float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+}
+
 // World-space direction through a screen UV, unprojected from the near plane (depth 1).
 float3 GetViewDirection(float2 uv)
 {
-    float2 ndc = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-    float4 nearPoint = mul(float4(ndc, 1.0, 1.0), View.inverseViewProjection);
+    float4 nearPoint = mul(float4(UvToNdc(uv), 1.0, 1.0), View.inverseViewProjection);
     return normalize(nearPoint.xyz / nearPoint.w - View.cameraPosition);
+}
+
+float3 ReconstructWorldPosition(float2 uv, float deviceDepth)
+{
+    float4 position = mul(float4(UvToNdc(uv), deviceDepth, 1.0), View.inverseViewProjection);
+    return position.xyz / position.w;
+}
+
+float GetViewDepth(float3 worldPosition)
+{
+    return mul(float4(worldPosition, 1.0), View.view).z;
 }
 
 #endif

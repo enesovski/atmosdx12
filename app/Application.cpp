@@ -10,6 +10,9 @@
 #include "scene/SceneSerializer.h"
 #include "ui/DebugUi.h"
 
+#include <format>
+#include <random>
+
 namespace
 {
     const atmos::WindowDesc MainWindow{ L"AtmosDX12", 1280, 720 };
@@ -54,6 +57,7 @@ Application::Application(HINSTANCE instance, const AppOptions& options)
     });
 
     LoadScene(options.scenePath.empty() ? FindDefaultScene() : options.scenePath);
+    SpawnLights(options.spawnLights);
 
     if (options.dumpFrame)
         renderer_->RequestFrameDump();
@@ -101,10 +105,11 @@ void Application::Tick(float deltaSeconds)
     UpdateCamera(deltaSeconds);
 
     assets_->Update();
-    atmos::BuildRenderScene(scene_, *assets_, renderScene_);
-
     DrawUi(deltaSeconds);
     debugUi_->EndFrame();
+
+    atmos::BuildRenderScene(scene_, *assets_, renderScene_);
+    renderScene_.settings = renderSettings_;
 
     Render();
 }
@@ -130,18 +135,21 @@ void Application::DrawUi(float deltaSeconds)
     if (!showDebugUi_)
         return;
 
-    const bool saveRequested = debugPanels_.Draw({
+    const DebugPanelActions actions = debugPanels_.Draw({
         .deltaSeconds = deltaSeconds,
         .camera = camera_,
         .cameraMoveSpeed = cameraController_.GetMoveSpeed(),
-        .environment = scene_.environment,
+        .scene = scene_,
+        .renderSettings = renderSettings_,
         .renderStats = renderer_->GetFrameStats(),
         .assetStats = assets_->GetStats(),
         .canSaveScene = !scenePath_.empty(),
     });
 
-    if (saveRequested)
+    if (actions.saveScene)
         SaveScene();
+
+    SpawnLights(actions.spawnLights);
 }
 
 void Application::Render()
@@ -194,4 +202,28 @@ void Application::SaveScene()
     {
         atmos::log::Error("{}", e.what());
     }
+}
+
+// Scatters colored point lights through the Sponza atrium. Seeded by the entity count, so a run is repeatable.
+void Application::SpawnLights(uint32_t count)
+{
+    if (count == 0)
+        return;
+
+    std::mt19937 random(static_cast<uint32_t>(scene_.GetEntities().size()));
+    std::uniform_real_distribution<float> x(-13.0f, 12.0f), y(0.5f, 8.0f), z(-5.5f, 5.5f);
+    std::uniform_real_distribution<float> hue(0.0f, 1.0f), range(5.0f, 8.0f);
+
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        const atmos::EntityId id = scene_.CreateEntity(std::format("Spawned light {}", i));
+        atmos::Entity& entity = scene_.GetEntity(id);
+        entity.transform.position = { x(random), y(random), z(random) };
+
+        DirectX::XMFLOAT3 color;
+        DirectX::XMStoreFloat3(&color, DirectX::XMColorHSVToRGB(DirectX::XMVectorSet(hue(random), 0.7f, 1.0f, 0.0f)));
+        entity.light = atmos::LightComponent{ .color = color, .intensity = 4.0f, .range = range(random) };
+    }
+
+    atmos::log::Info("Spawned {} lights", count);
 }

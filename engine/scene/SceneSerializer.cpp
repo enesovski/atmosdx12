@@ -28,6 +28,38 @@ namespace atmos
             return { value.at(0).get<float>(), value.at(1).get<float>(), value.at(2).get<float>() };
         }
 
+        LightComponent ReadLight(const json& node)
+        {
+            LightComponent light;
+            light.type = node.value("type", std::string("point")) == "spot" ? LightType::Spot : LightType::Point;
+            light.color = ReadFloat3(node, "color", light.color);
+            light.intensity = node.value("intensity", light.intensity);
+            light.range = node.value("range", light.range);
+            light.innerConeDegrees = node.value("innerConeDegrees", light.innerConeDegrees);
+            light.outerConeDegrees = node.value("outerConeDegrees", light.outerConeDegrees);
+            light.castsShadows = node.value("castsShadows", light.castsShadows);
+            return light;
+        }
+
+        json WriteLight(const LightComponent& light)
+        {
+            json node = {
+                { "type", light.type == LightType::Spot ? "spot" : "point" },
+                { "color", ToJson(light.color) },
+                { "intensity", light.intensity },
+                { "range", light.range },
+                { "castsShadows", light.castsShadows },
+            };
+
+            if (light.type == LightType::Spot)
+            {
+                node["innerConeDegrees"] = light.innerConeDegrees;
+                node["outerConeDegrees"] = light.outerConeDegrees;
+            }
+
+            return node;
+        }
+
         std::string ToGenericUtf8(const std::filesystem::path& path)
         {
             return ToUtf8(path.generic_wstring());
@@ -88,6 +120,9 @@ namespace atmos
                 const std::filesystem::path relative = ToWide(node.at("model").get<std::string>());
                 entity.model = ModelComponent{ .path = (baseDirectory / relative).lexically_normal() };
             }
+
+            if (node.contains("light"))
+                entity.light = ReadLight(node.at("light"));
         }
 
         return scene;
@@ -123,6 +158,9 @@ namespace atmos
                 { "rotationDegrees", ToJson(entity.transform.rotationDegrees) },
                 { "scale", ToJson(entity.transform.scale) },
             };
+
+            if (entity.light)
+                node["light"] = WriteLight(*entity.light);
 
             if (entity.model)
             {

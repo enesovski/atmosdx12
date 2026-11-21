@@ -3,6 +3,8 @@
 #include "core/Assert.h"
 #include "core/StringUtils.h"
 
+#include <cfloat>
+
 namespace atmos
 {
     namespace
@@ -34,5 +36,22 @@ namespace atmos
 
         DirectX::BoundingBox::CreateFromPoints(localBounds_, data.positions.size(), data.positions.data(),
                                                sizeof(DirectX::XMFLOAT3));
+
+        // Per-submesh bounds let views cull parts of large meshes (Sponza is one mesh).
+        for (const Submesh& submesh : submeshes_)
+        {
+            DirectX::XMVECTOR min = DirectX::XMVectorReplicate(FLT_MAX);
+            DirectX::XMVECTOR max = DirectX::XMVectorReplicate(-FLT_MAX);
+
+            for (uint32_t i = submesh.indexOffset; i < submesh.indexOffset + submesh.indexCount; ++i)
+            {
+                const DirectX::XMVECTOR position = DirectX::XMLoadFloat3(&data.positions[data.indices[i]]);
+                min = DirectX::XMVectorMin(min, position);
+                max = DirectX::XMVectorMax(max, position);
+            }
+
+            DirectX::BoundingBox& bounds = submeshBounds_.emplace_back();
+            DirectX::BoundingBox::CreateFromPoints(bounds, min, max);
+        }
     }
 }

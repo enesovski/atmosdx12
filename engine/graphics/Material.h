@@ -7,7 +7,7 @@
 
 namespace atmos
 {
-    // Mirrors MaterialGpuData in Mesh.hlsl. Texture fields are bindless SRV indices.
+    // Mirrors MaterialData in shaders/Scene/SceneData.hlsli. Texture fields are bindless SRV indices.
     struct MaterialGpuData
     {
         DirectX::XMFLOAT4 baseColorFactor;

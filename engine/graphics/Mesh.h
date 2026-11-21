@@ -26,6 +26,7 @@ namespace atmos
         const Buffer& GetIndexBuffer() const { return indices_; }
         std::span<const Submesh> GetSubmeshes() const { return submeshes_; }
         const DirectX::BoundingBox& GetLocalBounds() const { return localBounds_; }
+        const DirectX::BoundingBox& GetSubmeshBounds(size_t submesh) const { return submeshBounds_[submesh]; }
         const std::string& GetName() const { return name_; }
 
     private:
@@ -34,6 +35,7 @@ namespace atmos
         Buffer indices_;
         std::vector<Submesh> submeshes_;
         DirectX::BoundingBox localBounds_;
+        std::vector<DirectX::BoundingBox> submeshBounds_;
         std::string name_;
     };
 }

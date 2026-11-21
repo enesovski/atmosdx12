@@ -1,10 +1,8 @@
 #include "graphics/Renderer.h"
-#include "graphics/Frustum.h"
 #include "graphics/OverlayRenderer.h"
 #include "graphics/RenderScene.h"
 #include "graphics/RenderView.h"
 #include "graphics/ShaderInterop.h"
-#include "graphics/rendergraph/RenderGraph.h"
 #include "core/Log.h"
 #include "platform/Paths.h"
 
@@ -38,12 +36,9 @@ namespace atmos
                            GraphicsConfig::FramesInFlight),
           commandContext_(device_, uploadAllocator_),
           shaderCompiler_(GetExecutableDirectory() / "shaders"),
-          texturePool_(device_),
-          gpuScene_(device_),
-          depthPrepass_(device_, shaderCompiler_),
-          opaquePass_(device_, shaderCompiler_),
-          skyPass_(device_, shaderCompiler_),
-          tonemapPass_(device_, shaderCompiler_, GraphicsConfig::BackBufferFormat)
+          transientPool_(device_),
+          gpuTimer_(device_),
+          sceneRenderer_(std::make_unique<SceneRenderer>(device_, shaderCompiler_))
     {
         device_.LogDebugMessages();
     }
@@ -79,39 +74,41 @@ namespace atmos
     {
         try
         {
+            const uint32_t width = swapChain_.GetWidth();
+            const uint32_t height = swapChain_.GetHeight();
+
             const uint32_t frameIndex = frameScheduler_.BeginFrame();
             uploadAllocator_.BeginFrame(frameIndex);
             commandContext_.Begin(frameScheduler_.GetCommandList());
+            gpuTimer_.Begin(frameScheduler_.GetCommandList(), frameIndex);
 
             const XMMATRIX viewProjection = XMLoadFloat4x4(&view.viewMatrix) * XMLoadFloat4x4(&view.projectionMatrix);
-            commandContext_.SetGlobalConstantBuffer(
-                RootSlot::ViewConstants,
-                BuildViewConstants(view, viewProjection, swapChain_.GetWidth(), swapChain_.GetHeight(), frameNumber_));
+            commandContext_.SetGlobalConstantBuffer(RootSlot::ViewConstants,
+                                                    BuildViewConstants(view, viewProjection, width, height, frameNumber_));
 
-            gpuScene_.Update(frameIndex, scene, Frustum::FromViewProjection(viewProjection));
+            sceneRenderer_->Prepare(frameIndex, scene, view, width, height);
 
-            RenderGraph graph(texturePool_);
-            BuildFrameGraph(graph, scene, overlay);
+            RenderGraph graph(transientPool_);
+            const RGTexture backBuffer = graph.ImportTexture(swapChain_.GetCurrentBackBuffer(), D3D12_RESOURCE_STATE_PRESENT);
+            sceneRenderer_->AddPasses(graph, scene, backBuffer);
+            AddOverlayPass(graph, backBuffer, overlay);
             graph.Execute(commandContext_);
 
             frameStats_.passes = graph.GetPassInfos();
-            frameStats_.scene = gpuScene_.GetStats();
-            frameStats_.pooledTextures = texturePool_.GetTextureCount();
+            frameStats_.scene = sceneRenderer_->GetStats();
+            frameStats_.pooledTextures = transientPool_.GetTextureCount();
+            frameStats_.pooledBuffers = transientPool_.GetBufferCount();
+            frameStats_.gpuMilliseconds = gpuTimer_.GetLastFrameMilliseconds();
 
-            if (dumpNextFrame_)
-            {
-                const GpuSceneStats& stats = frameStats_.scene;
-                graph.LogSummary();
-                log::Info("Scene: {} instances, {} culled, {} draws, {} materials, {} pooled textures", stats.instances,
-                          stats.culledInstances, stats.draws, stats.materials, frameStats_.pooledTextures);
-                dumpNextFrame_ = false;
-            }
+            if (std::exchange(dumpNextFrame_, false))
+                LogFrameDump(graph);
 
             commandContext_.End();
+            gpuTimer_.End(frameScheduler_.GetCommandList(), frameIndex);
             frameScheduler_.Submit();
             swapChain_.Present();
             frameScheduler_.EndFrame();
-            texturePool_.EndFrame();
+            transientPool_.EndFrame();
 
             device_.LogDebugMessages();
             ++frameNumber_;
@@ -127,42 +124,28 @@ namespace atmos
         }
     }
 
-    void Renderer::BuildFrameGraph(RenderGraph& graph, const RenderScene& scene, IOverlayRenderer* overlay)
+    void Renderer::AddOverlayPass(RenderGraph& graph, RGTexture backBuffer, IOverlayRenderer* overlay) const
     {
-        const uint32_t width = swapChain_.GetWidth();
-        const uint32_t height = swapChain_.GetHeight();
+        if (!overlay)
+            return;
 
-        const RGTexture backBuffer = graph.ImportTexture(swapChain_.GetCurrentBackBuffer(),
-                                                         D3D12_RESOURCE_STATE_PRESENT);
+        graph.AddPass(L"Overlay",
+            [&](RGBuilder& builder) {
+                builder.WriteColor(backBuffer, LoadOp::Load);
+            },
+            [overlay](RGContext& context) {
+                overlay->RecordOverlay(context.commands);
+            });
+    }
 
-        const RGTexture depth = graph.CreateTexture({
-            .width = width,
-            .height = height,
-            .format = GraphicsConfig::DepthFormat,
-            .debugName = L"Scene Depth",
-        });
-
-        const RGTexture sceneColor = graph.CreateTexture({
-            .width = width,
-            .height = height,
-            .format = GraphicsConfig::HdrColorFormat,
-            .debugName = L"Scene Color",
-        });
-
-        depthPrepass_.AddToGraph(graph, gpuScene_, depth);
-        opaquePass_.AddToGraph(graph, gpuScene_, scene.sky, depth, sceneColor);
-        skyPass_.AddToGraph(graph, scene.sky, depth, sceneColor);
-        tonemapPass_.AddToGraph(graph, scene.postProcess, sceneColor, backBuffer);
-
-        if (overlay)
-        {
-            graph.AddPass(L"Overlay",
-                [&](RGBuilder& builder) {
-                    builder.WriteColor(backBuffer, LoadOp::Load);
-                },
-                [overlay](RGContext& context) {
-                    overlay->RecordOverlay(context.commands);
-                });
-        }
+    void Renderer::LogFrameDump(const RenderGraph& graph) const
+    {
+        const SceneRenderStats& stats = frameStats_.scene;
+        graph.LogSummary();
+        log::Info("Scene: {} instances, {} draws ({} visible), {} materials", stats.scene.instances, stats.scene.draws,
+                  stats.visibleDraws, stats.scene.materials);
+        log::Info("Lights: {} ({} shadowed), {} shadow views with {} draws", stats.lights, stats.shadowedLights,
+                  stats.shadowViews, stats.shadowDraws);
+        log::Info("Pool: {} textures, {} buffers", frameStats_.pooledTextures, frameStats_.pooledBuffers);
     }
 }
