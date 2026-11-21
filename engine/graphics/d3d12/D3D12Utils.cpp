@@ -28,3 +28,27 @@ namespace atmos
             object->SetName(std::wstring(name).c_str());
     }
 }
+
+namespace atmos
+{
+    const char* GetFormatName(DXGI_FORMAT format)
+    {
+        switch (format)
+        {
+            case DXGI_FORMAT_R8G8B8A8_UNORM:      return "RGBA8";
+            case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: return "RGBA8 sRGB";
+            case DXGI_FORMAT_R10G10B10A2_UNORM:   return "RGB10A2";
+            case DXGI_FORMAT_R16G16B16A16_FLOAT:  return "RGBA16F";
+            case DXGI_FORMAT_R16G16_FLOAT:        return "RG16F";
+            case DXGI_FORMAT_R32_FLOAT:           return "R32F";
+            case DXGI_FORMAT_R8_UNORM:            return "R8";
+            case DXGI_FORMAT_D32_FLOAT:           return "D32F";
+            case DXGI_FORMAT_BC1_UNORM:           return "BC1";
+            case DXGI_FORMAT_BC1_UNORM_SRGB:      return "BC1 sRGB";
+            case DXGI_FORMAT_BC3_UNORM:           return "BC3";
+            case DXGI_FORMAT_BC3_UNORM_SRGB:      return "BC3 sRGB";
+            case DXGI_FORMAT_BC5_UNORM:           return "BC5";
+            default:                              return "other";
+        }
+    }
+}

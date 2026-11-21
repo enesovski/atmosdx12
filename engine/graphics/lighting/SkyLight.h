@@ -31,6 +31,9 @@ namespace atmos
 
         SkyLightResources AddToGraph(RenderGraph& graph, const SkyEnvironment& sky);
 
+        // Captures again next frame even if the sun has not moved.
+        void RequestRecapture() { capturedSunDirection_.reset(); }
+
     private:
         Texture skyCube_;
         Texture specularCube_;

@@ -32,7 +32,8 @@ namespace atmos
     {
     public:
         static constexpr uint32_t CascadeCount = 4;
-        static constexpr uint32_t CascadeResolution = 2048;
+        static constexpr uint32_t MinCascadeResolution = 512;
+        static constexpr uint32_t MaxCascadeResolution = 4096;
         static constexpr uint32_t AtlasResolution = 4096;
         static constexpr uint32_t AtlasTileSize = 512;
         static constexpr uint32_t MaxViews = 1 + CascadeCount + (AtlasResolution / AtlasTileSize) * (AtlasResolution / AtlasTileSize);
@@ -45,6 +46,7 @@ namespace atmos
         const std::vector<ShadowView>& GetShadowViews() const { return shadowViews_; }
         bool HasSunShadows() const { return cascadeCount_ > 0; }
         bool HasLocalShadows() const { return localShadowCount_ > 0; }
+        uint32_t GetCascadeResolution() const { return cascadeResolution_; }
 
         // Sun, cascade and grid parameters. Bindless indices are filled in by the caller.
         LightingConstants BuildConstants(const RenderScene& scene, uint32_t width, uint32_t height) const;
@@ -59,6 +61,7 @@ namespace atmos
         DirectX::XMFLOAT4 cascadeSplits_{};
         uint32_t cascadeCount_ = 0;
         uint32_t localShadowCount_ = 0;
+        uint32_t cascadeResolution_ = 2048;
         DirectX::XMFLOAT3 sunDirection_{};
         DirectX::XMFLOAT3 sunColor_{};
         float sunIntensity_ = 0.0f;

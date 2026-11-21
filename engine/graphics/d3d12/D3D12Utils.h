@@ -39,3 +39,9 @@ namespace atmos
     // Names show up in PIX, debug-layer messages and DRED reports.
     void SetDebugName(ID3D12Object* object, std::wstring_view name);
 }
+
+namespace atmos
+{
+    // Short name of the formats the engine uses ("RGBA16F"); "other" for the rest.
+    const char* GetFormatName(DXGI_FORMAT format);
+}

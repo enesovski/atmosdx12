@@ -20,7 +20,8 @@ namespace atmos
           deferredLightingPass_(device, compiler),
           skyPass_(device, compiler),
           transparentPass_(device, compiler),
-          tonemapPass_(device, compiler, GraphicsConfig::BackBufferFormat)
+          tonemapPass_(device, compiler, GraphicsConfig::BackBufferFormat),
+          editorOverlayPass_(device, compiler, GraphicsConfig::BackBufferFormat)
     {
     }
 
@@ -37,8 +38,10 @@ namespace atmos
         lightBuffer_.Write(frameIndex, lightSetup_.GetLights());
 
         const XMMATRIX viewProjection = XMLoadFloat4x4(&view.viewMatrix) * XMLoadFloat4x4(&view.projectionMatrix);
-        gpuScene_.Cull(Frustum::FromViewProjection(viewProjection), cameraDrawList_, true);
+        const Frustum cameraFrustum = Frustum::FromViewProjection(viewProjection);
+        gpuScene_.Cull(cameraFrustum, cameraDrawList_, true);
         gpuScene_.SortTransparentBackToFront(cameraDrawList_, view.position);
+        gpuScene_.CullEntities(cameraFrustum, scene.overlays.selectedEntities, selectionDrawList_);
 
         const std::vector<ShadowView>& shadowViews = lightSetup_.GetShadowViews();
         shadowDrawLists_.resize(shadowViews.size());
@@ -86,7 +89,7 @@ namespace atmos
         lighting.skyLight = skyLight_.AddToGraph(graph, scene.sky);
 
         shadowPass_.AddToGraph(graph, gpuScene_, lightSetup_.GetShadowViews(), shadowDrawLists_, viewBufferIndex,
-                               lighting.cascadeShadowMap, lighting.shadowAtlas);
+                               lightSetup_.GetCascadeResolution(), lighting.cascadeShadowMap, lighting.shadowAtlas);
 
         depthPrepass_.AddToGraph(graph, gpuScene_, cameraDrawList_, viewBufferIndex, depth);
         const GBufferTargets gbuffer =
@@ -99,6 +102,11 @@ namespace atmos
         transparentPass_.AddToGraph(graph, gpuScene_, cameraDrawList_, viewBufferIndex, lightingConstants_, lighting, depth,
                                     sceneColor);
 
-        tonemapPass_.AddToGraph(graph, scene.postProcess, sceneColor, output, scene.settings.debugView != DebugView::Lit);
+        const DebugView debugView = scene.settings.debugView;
+        const bool showsRawValues = debugView != DebugView::Lit && debugView != DebugView::LightingOnly;
+        tonemapPass_.AddToGraph(graph, scene.postProcess, sceneColor, output, showsRawValues);
+
+        editorOverlayPass_.AddToGraph(graph, gpuScene_, scene.overlays, cameraDrawList_, selectionDrawList_,
+                                      viewBufferIndex, depth, output, width_, height_);
     }
 }

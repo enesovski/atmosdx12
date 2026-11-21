@@ -12,7 +12,9 @@ namespace atmos
 {
     namespace
     {
-        constexpr int FormatVersion = 1;
+        // 2 added "active", "renderSettings" and "cameraBookmarks"; version 1 files still load.
+        constexpr int FormatVersion = 2;
+        constexpr int OldestReadableVersion = 1;
 
         json ToJson(const DirectX::XMFLOAT3& value)
         {
@@ -64,6 +66,61 @@ namespace atmos
         {
             return ToUtf8(path.generic_wstring());
         }
+
+        SceneCamera ReadCamera(const json& node, SceneCamera camera)
+        {
+            camera.position = ReadFloat3(node, "position", camera.position);
+            camera.yawDegrees = node.value("yawDegrees", camera.yawDegrees);
+            camera.pitchDegrees = node.value("pitchDegrees", camera.pitchDegrees);
+            camera.fovDegrees = node.value("fovDegrees", camera.fovDegrees);
+            return camera;
+        }
+
+        json WriteCamera(const SceneCamera& camera)
+        {
+            return {
+                { "position", ToJson(camera.position) },
+                { "yawDegrees", camera.yawDegrees },
+                { "pitchDegrees", camera.pitchDegrees },
+                { "fovDegrees", camera.fovDegrees },
+            };
+        }
+
+        // Missing keys keep their defaults, so settings added later never break old files.
+        RenderSettings ReadRenderSettings(const json& node)
+        {
+            RenderSettings s;
+            s.sunShadows = node.value("sunShadows", s.sunShadows);
+            s.shadowDistance = node.value("shadowDistance", s.shadowDistance);
+            s.cascadeSplitLambda = node.value("cascadeSplitLambda", s.cascadeSplitLambda);
+            s.cascadeResolution = node.value("cascadeResolution", s.cascadeResolution);
+            s.shadowFilter = node.value("shadowFilter", std::string("pcf")) == "hard" ? ShadowFilter::Hard
+                                                                                      : ShadowFilter::Pcf3x3;
+            s.shadowNormalOffset = node.value("shadowNormalOffset", s.shadowNormalOffset);
+            s.localShadows = node.value("localShadows", s.localShadows);
+            s.maxShadowedLights = node.value("maxShadowedLights", s.maxShadowedLights);
+            s.imageBasedLighting = node.value("imageBasedLighting", s.imageBasedLighting);
+            s.ambientIntensity = node.value("ambientIntensity", s.ambientIntensity);
+            s.reflectionIntensity = node.value("reflectionIntensity", s.reflectionIntensity);
+            return s;
+        }
+
+        json WriteRenderSettings(const RenderSettings& s)
+        {
+            return {
+                { "sunShadows", s.sunShadows },
+                { "shadowDistance", s.shadowDistance },
+                { "cascadeSplitLambda", s.cascadeSplitLambda },
+                { "cascadeResolution", s.cascadeResolution },
+                { "shadowFilter", s.shadowFilter == ShadowFilter::Hard ? "hard" : "pcf" },
+                { "shadowNormalOffset", s.shadowNormalOffset },
+                { "localShadows", s.localShadows },
+                { "maxShadowedLights", s.maxShadowedLights },
+                { "imageBasedLighting", s.imageBasedLighting },
+                { "ambientIntensity", s.ambientIntensity },
+                { "reflectionIntensity", s.reflectionIntensity },
+            };
+        }
     }
 
     Scene LoadScene(const std::filesystem::path& path)
@@ -75,7 +132,9 @@ namespace atmos
 
         const json root = json::parse(stream);
 
-        if (root.value("version", 0) != FormatVersion)
+        const int version = root.value("version", 0);
+
+        if (version < OldestReadableVersion || version > FormatVersion)
             throw std::runtime_error("Unsupported scene version in " + ToUtf8(path.wstring()));
 
         Scene scene;
@@ -92,13 +151,17 @@ namespace atmos
         }
 
         if (root.contains("camera"))
+            scene.camera = ReadCamera(root.at("camera"), scene.camera);
+
+        if (root.contains("renderSettings"))
+            scene.renderSettings = ReadRenderSettings(root.at("renderSettings"));
+
+        for (const json& bookmark : root.value("cameraBookmarks", json::array()))
         {
-            const json& camera = root.at("camera");
-            SceneCamera& target = scene.camera;
-            target.position = ReadFloat3(camera, "position", target.position);
-            target.yawDegrees = camera.value("yawDegrees", target.yawDegrees);
-            target.pitchDegrees = camera.value("pitchDegrees", target.pitchDegrees);
-            target.fovDegrees = camera.value("fovDegrees", target.fovDegrees);
+            const size_t slot = bookmark.value("slot", size_t{ 0 });
+
+            if (slot >= 1 && slot <= Scene::BookmarkCount)
+                scene.cameraBookmarks[slot - 1] = ReadCamera(bookmark, {});
         }
 
         for (const json& node : root.value("entities", json::array()))
@@ -114,6 +177,7 @@ namespace atmos
             entity.transform.position = ReadFloat3(node, "position", entity.transform.position);
             entity.transform.rotationDegrees = ReadFloat3(node, "rotationDegrees", entity.transform.rotationDegrees);
             entity.transform.scale = ReadFloat3(node, "scale", entity.transform.scale);
+            entity.active = node.value("active", true);
 
             if (node.contains("model"))
             {
@@ -140,12 +204,23 @@ namespace atmos
             { "sunIntensity", scene.environment.sunIntensity },
             { "exposure", scene.environment.exposure },
         };
-        root["camera"] = {
-            { "position", ToJson(scene.camera.position) },
-            { "yawDegrees", scene.camera.yawDegrees },
-            { "pitchDegrees", scene.camera.pitchDegrees },
-            { "fovDegrees", scene.camera.fovDegrees },
-        };
+        root["camera"] = WriteCamera(scene.camera);
+        root["renderSettings"] = WriteRenderSettings(scene.renderSettings);
+
+        json bookmarks = json::array();
+
+        for (size_t i = 0; i < Scene::BookmarkCount; ++i)
+        {
+            if (!scene.cameraBookmarks[i])
+                continue;
+
+            json bookmark = WriteCamera(*scene.cameraBookmarks[i]);
+            bookmark["slot"] = i + 1;
+            bookmarks.push_back(std::move(bookmark));
+        }
+
+        if (!bookmarks.empty())
+            root["cameraBookmarks"] = std::move(bookmarks);
 
         json entities = json::array();
 
@@ -158,6 +233,9 @@ namespace atmos
                 { "rotationDegrees", ToJson(entity.transform.rotationDegrees) },
                 { "scale", ToJson(entity.transform.scale) },
             };
+
+            if (!entity.active)
+                node["active"] = false;
 
             if (entity.light)
                 node["light"] = WriteLight(*entity.light);

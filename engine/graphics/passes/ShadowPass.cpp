@@ -23,8 +23,8 @@ namespace atmos
     }
 
     void ShadowPass::AddToGraph(RenderGraph& graph, const GpuScene& scene, std::span<const ShadowView> views,
-                                std::span<const DrawList> drawLists, uint32_t viewBufferIndex, RGTexture& cascadeShadowMap,
-                                RGTexture& shadowAtlas) const
+                                std::span<const DrawList> drawLists, uint32_t viewBufferIndex, uint32_t cascadeResolution,
+                                RGTexture& cascadeShadowMap, RGTexture& shadowAtlas) const
     {
         cascadeShadowMap = {};
         shadowAtlas = {};
@@ -44,8 +44,8 @@ namespace atmos
             if (!cascadeShadowMap.IsValid())
             {
                 cascadeShadowMap = graph.CreateTexture({
-                    .width = LightSetup::CascadeResolution,
-                    .height = LightSetup::CascadeResolution,
+                    .width = cascadeResolution,
+                    .height = cascadeResolution,
                     .arraySize = LightSetup::CascadeCount,
                     .format = GraphicsConfig::DepthFormat,
                     .debugName = L"Sun Shadow Cascades",

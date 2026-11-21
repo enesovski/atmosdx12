@@ -5,10 +5,14 @@
 #include "Scene/ViewData.hlsli"
 
 // Shadow maps use reverse-Z like the camera: a receiver is lit when its depth >= the stored
-// occluder depth (ShadowCompare, hardware 2x2 PCF). Filtering is a 3x3 tent of PCF taps.
+// occluder depth (ShadowCompare, hardware 2x2 PCF). Filtering is a 3x3 tent of PCF taps, or a
+// single tap for ShadowFilterHard.
 
 float FilterShadow3x3(Texture2DArray<float> map, float2 uv, float slice, float depth, float2 texelSize)
 {
+    if (Lighting.shadowFilter == ShadowFilterHard)
+        return map.SampleCmpLevelZero(ShadowCompare, float3(uv, slice), depth);
+
     float sum = 0.0;
 
     [unroll]
@@ -24,6 +28,9 @@ float FilterShadow3x3(Texture2DArray<float> map, float2 uv, float slice, float d
 
 float FilterShadow3x3(Texture2D<float> map, float2 uv, float depth, float2 texelSize, float2 tileMin, float2 tileMax)
 {
+    if (Lighting.shadowFilter == ShadowFilterHard)
+        return map.SampleCmpLevelZero(ShadowCompare, clamp(uv, tileMin, tileMax), depth);
+
     float sum = 0.0;
 
     [unroll]

@@ -61,7 +61,7 @@ namespace atmos
             const CullMode mode = pipeline.cullMode;
 
             D3D12_RASTERIZER_DESC desc{};
-            desc.FillMode = D3D12_FILL_MODE_SOLID;
+            desc.FillMode = pipeline.wireframe ? D3D12_FILL_MODE_WIREFRAME : D3D12_FILL_MODE_SOLID;
             desc.DepthClipEnable = pipeline.depthClip;
             desc.DepthBias = pipeline.depthBias;
             desc.SlopeScaledDepthBias = pipeline.slopeScaledDepthBias;

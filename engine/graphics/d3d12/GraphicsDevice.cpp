@@ -149,6 +149,23 @@ namespace atmos
     {
         if (options.enableDebugLayer || options.enableGpuValidation)
             ConfigureInfoQueue();
+
+        DXGI_ADAPTER_DESC1 desc{};
+
+        if (SUCCEEDED(adapter_->GetDesc1(&desc)))
+            adapterName_ = desc.Description;
+    }
+
+    VideoMemoryInfo GraphicsDevice::QueryVideoMemory() const
+    {
+        ComPtr<IDXGIAdapter3> adapter;
+        DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+
+        if (FAILED(adapter_.As(&adapter)) ||
+            FAILED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info)))
+            return {};
+
+        return { info.CurrentUsage, info.Budget };
     }
 
     void GraphicsDevice::ConfigureInfoQueue()

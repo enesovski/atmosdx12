@@ -68,10 +68,18 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     float2 pixel = id.xy + 0.5;
     float3 worldPosition = ReconstructWorldPosition(pixel * View.inverseViewportSize, depth);
     float viewDepth = GetViewDepth(worldPosition);
+    RWTexture2D<float4> sceneColor = ResourceDescriptorHeap[Constants.sceneColorUav];
+
+    // Lighting Only: mid-grey dielectric albedo and no emissive, as in Unreal's view mode.
+    if (Lighting.debugView == DebugViewLightingOnly)
+    {
+        Surface grey = MakeSurface(worldPosition, gbuffer.normal, 0.5, 0.0, gbuffer.roughness, gbuffer.occlusion);
+        sceneColor[id.xy] = float4(EvaluateLighting(grey, pixel, viewDepth), 1.0);
+        return;
+    }
+
     Surface surface = MakeSurface(worldPosition, gbuffer.normal, gbuffer.baseColor, gbuffer.metallic, gbuffer.roughness,
                                   gbuffer.occlusion);
-
-    RWTexture2D<float4> sceneColor = ResourceDescriptorHeap[Constants.sceneColorUav];
 
     if (Lighting.debugView != DebugViewLit)
     {

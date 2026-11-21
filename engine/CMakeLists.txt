@@ -19,6 +19,7 @@ add_library(AtmosEngine STATIC
 
     scene/Camera.h
     scene/Camera.cpp
+    scene/RenderSettings.h
     scene/Scene.h
     scene/Scene.cpp
     scene/SceneSerializer.h
@@ -53,8 +54,8 @@ add_library(AtmosEngine STATIC
     graphics/d3d12/FrameScheduler.h
     graphics/d3d12/FrameScheduler.cpp
     graphics/d3d12/FrameStructuredBuffer.h
-    graphics/d3d12/GpuTimer.h
-    graphics/d3d12/GpuTimer.cpp
+    graphics/d3d12/GpuProfiler.h
+    graphics/d3d12/GpuProfiler.cpp
     graphics/d3d12/GraphicsConfig.h
     graphics/d3d12/GraphicsDevice.h
     graphics/d3d12/GraphicsDevice.cpp
@@ -90,6 +91,8 @@ add_library(AtmosEngine STATIC
     graphics/passes/DepthPipelines.cpp
     graphics/passes/DepthPrepass.h
     graphics/passes/DepthPrepass.cpp
+    graphics/passes/EditorOverlayPass.h
+    graphics/passes/EditorOverlayPass.cpp
     graphics/passes/GBufferPass.h
     graphics/passes/GBufferPass.cpp
     graphics/passes/LightClusteringPass.h
@@ -114,7 +117,6 @@ add_library(AtmosEngine STATIC
     graphics/MeshData.h
     graphics/OverlayRenderer.h
     graphics/RenderScene.h
-    graphics/RenderSettings.h
     graphics/RenderView.h
     graphics/RenderView.cpp
     graphics/Renderer.h
@@ -127,9 +129,6 @@ add_library(AtmosEngine STATIC
     runtime/AssetManager.cpp
     runtime/RenderSceneBuilder.h
     runtime/RenderSceneBuilder.cpp
-
-    ui/DebugUi.h
-    ui/DebugUi.cpp
 )
 
 target_include_directories(AtmosEngine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -155,7 +154,6 @@ target_link_libraries(AtmosEngine
         dxgi
         dxguid
         dxcompiler
-        imgui
     PRIVATE
         DirectXTex
         nlohmann_json::nlohmann_json

@@ -1,14 +1,8 @@
 add_executable(AtmosDX12
     main.cpp
-    Application.h
-    Application.cpp
-    FlyCameraController.h
-    FlyCameraController.cpp
-    DebugPanels.h
-    DebugPanels.cpp
 )
 
-target_link_libraries(AtmosDX12 PRIVATE AtmosEngine)
+target_link_libraries(AtmosDX12 PRIVATE AtmosEditor)
 
 if(MSVC)
     target_compile_options(AtmosDX12 PRIVATE /W4 /permissive- /utf-8)

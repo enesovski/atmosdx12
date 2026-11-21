@@ -17,6 +17,9 @@ namespace atmos
         float GetPitchDegrees() const { return pitchDegrees_; }
         float GetFovDegrees() const { return fovDegrees_; }
 
+        void SetNearPlane(float nearPlane);
+        float GetNearPlane() const { return nearPlane_; }
+
         void SetPosition(const DirectX::XMFLOAT3& position) { position_ = position; }
         const DirectX::XMFLOAT3& GetPosition() const { return position_; }
         DirectX::XMFLOAT3 GetForward() const;

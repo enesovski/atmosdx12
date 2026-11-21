@@ -73,9 +73,25 @@ namespace atmos
         UnregisterClassW(WindowClassName, instance_);
     }
 
-    void Window::Show()
+    void Window::Show(bool maximized)
     {
-        ShowWindow(window_, SW_SHOW);
+        ShowWindow(window_, maximized ? SW_SHOWMAXIMIZED : SW_SHOW);
+    }
+
+    void Window::SetTitle(const std::wstring& title)
+    {
+        SetWindowTextW(window_, title.c_str());
+    }
+
+    void Window::Close()
+    {
+        if (window_)
+            DestroyWindow(window_);
+    }
+
+    float Window::GetDpiScale() const
+    {
+        return static_cast<float>(GetDpiForWindow(window_)) / USER_DEFAULT_SCREEN_DPI;
     }
 
     bool Window::ProcessMessages(int& exitCode)
@@ -205,6 +221,15 @@ namespace atmos
                     resizePending_ = true;
                 }
                 return 0;
+
+            case WM_DPICHANGED:
+            {
+                // Per-monitor DPI awareness: take the size Windows suggests for the new monitor.
+                const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
+                SetWindowPos(window, nullptr, suggested->left, suggested->top, suggested->right - suggested->left,
+                             suggested->bottom - suggested->top, SWP_NOZORDER | SWP_NOACTIVATE);
+                return 0;
+            }
 
             case WM_DESTROY:
                 PostQuitMessage(0);

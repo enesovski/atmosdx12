@@ -1,4 +1,4 @@
-#include "Application.h"
+#include "EditorApp.h"
 
 #include "core/Log.h"
 
@@ -8,13 +8,13 @@
 
 namespace
 {
-    // --scene <file>     .json scene or a single .gltf/.glb (default: scenes/sponza.json)
+    // --scene <file>     .json scene or a single .gltf/.glb (default: the last scene, then scenes/sponza.json)
     // --dump-frame       log the first frame's render graph and culling stats
     // --gpu-validation   D3D12 GPU-based validation (slow)
     // --spawn-lights N   add N random point lights to the scene
-    AppOptions ParseCommandLine(int argc, char* argv[])
+    atmos::editor::EditorOptions ParseCommandLine(int argc, char* argv[])
     {
-        AppOptions options;
+        atmos::editor::EditorOptions options;
 
         for (int i = 1; i < argc; ++i)
         {
@@ -38,9 +38,12 @@ namespace
 
 int main(int argc, char* argv[])
 {
+    // Crisp UI on high-DPI monitors: the editor scales its fonts per monitor instead of being stretched.
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
     try
     {
-        Application app(GetModuleHandleW(nullptr), ParseCommandLine(argc, argv));
+        atmos::editor::EditorApp app(GetModuleHandleW(nullptr), ParseCommandLine(argc, argv));
         return app.Run();
     }
     catch (const std::exception& e)

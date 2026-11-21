@@ -75,6 +75,7 @@ namespace atmos
 
         // Bindless indices into ResourceDescriptorHeap.
         uint32_t GetSrvIndex() const;
+        D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpuHandle() const { return srv_.gpu; }  // e.g. for ImGui::Image
         uint32_t GetUavIndex(uint32_t mip = 0) const;
 
         D3D12_CPU_DESCRIPTOR_HANDLE GetRtv() const;

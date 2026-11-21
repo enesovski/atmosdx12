@@ -1,4 +1,7 @@
-#include "ui/DebugUi.h"
+#include "ImGuiLayer.h"
+#include "style/EditorFonts.h"
+
+#include "core/StringUtils.h"
 #include "graphics/d3d12/CommandContext.h"
 #include "graphics/d3d12/GraphicsConfig.h"
 #include "graphics/d3d12/GraphicsDevice.h"
@@ -6,6 +9,7 @@
 #include <imgui.h>
 #include <imgui_impl_dx12.h>
 #include <imgui_impl_win32.h>
+#include <ImGuizmo.h>
 
 #include <algorithm>
 #include <stdexcept>
@@ -13,30 +17,32 @@
 // Declared by the backend only under #if 0, so the application declares it.
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-namespace atmos
+namespace atmos::editor
 {
     namespace
     {
-        DebugUi* GetOwner(ImGui_ImplDX12_InitInfo* info)
+        ImGuiLayer* GetOwner(ImGui_ImplDX12_InitInfo* info)
         {
-            return static_cast<DebugUi*>(info->UserData);
+            return static_cast<ImGuiLayer*>(info->UserData);
         }
     }
 
-    DebugUi::DebugUi(HWND window, GraphicsDevice& device)
-        : shaderResourceHeap_(device.GetShaderResourceHeap())
+    ImGuiLayer::ImGuiLayer(HWND window, GraphicsDevice& device, const std::filesystem::path& layoutFile)
+        : shaderResourceHeap_(device.GetShaderResourceHeap()), layoutFile_(ToUtf8(layoutFile.wstring()))
     {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
 
         ImGuiIO& io = ImGui::GetIO();
-        io.IniFilename = nullptr;  // No imgui.ini next to the working directory.
-        ImGui::StyleColorsDark();
+        io.IniFilename = layoutFile_.c_str();
+        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+        io.ConfigWindowsMoveFromTitleBarOnly = true;
+        io.ConfigDockingTransparentPayload = true;
 
         if (!ImGui_ImplWin32_Init(window))
             throw std::runtime_error("Failed to initialize the ImGui Win32 backend");
 
-        // The backend allocates its SRVs from our bindless heap through these callbacks.
+        // The backend allocates its SRVs from the bindless heap through these callbacks.
         ImGui_ImplDX12_InitInfo info;
         info.Device = device.GetNativeDevice();
         info.CommandQueue = device.GetGraphicsQueue();
@@ -47,7 +53,7 @@ namespace atmos
         info.SrvDescriptorHeap = shaderResourceHeap_.GetHeap();
         info.SrvDescriptorAllocFn = [](ImGui_ImplDX12_InitInfo* initInfo, D3D12_CPU_DESCRIPTOR_HANDLE* cpu,
                                        D3D12_GPU_DESCRIPTOR_HANDLE* gpu) {
-            DebugUi* self = GetOwner(initInfo);
+            ImGuiLayer* self = GetOwner(initInfo);
             const Descriptor descriptor = self->shaderResourceHeap_.Allocate();
             self->descriptors_.push_back(descriptor);
             *cpu = descriptor.cpu;
@@ -55,7 +61,7 @@ namespace atmos
         };
         info.SrvDescriptorFreeFn = [](ImGui_ImplDX12_InitInfo* initInfo, D3D12_CPU_DESCRIPTOR_HANDLE cpu,
                                       D3D12_GPU_DESCRIPTOR_HANDLE) {
-            DebugUi* self = GetOwner(initInfo);
+            ImGuiLayer* self = GetOwner(initInfo);
             auto found = std::ranges::find(self->descriptors_, cpu.ptr,
                                            [](const Descriptor& descriptor) { return descriptor.cpu.ptr; });
 
@@ -70,41 +76,47 @@ namespace atmos
             throw std::runtime_error("Failed to initialize the ImGui D3D12 backend");
     }
 
-    DebugUi::~DebugUi()
+    ImGuiLayer::~ImGuiLayer()
     {
         ImGui_ImplDX12_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
     }
 
-    bool DebugUi::HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+    bool ImGuiLayer::HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
     {
         return ImGui_ImplWin32_WndProcHandler(window, message, wParam, lParam) != 0;
     }
 
-    void DebugUi::BeginFrame()
+    void ImGuiLayer::BeginFrame()
     {
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+        ImGuizmo::BeginFrame();
     }
 
-    void DebugUi::EndFrame()
+    void ImGuiLayer::EndFrame()
     {
         ImGui::Render();
     }
 
-    bool DebugUi::WantsMouse() const
+    void ImGuiLayer::ApplyAppearance(float scale, Theme theme, float fontSize)
     {
-        return ImGui::GetIO().WantCaptureMouse;
+        // The font texture is recreated by the backend on the next NewFrame.
+        if (fontsBuilt_)
+            ImGui_ImplDX12_InvalidateDeviceObjects();
+
+        BuildFonts(scale, fontSize);
+        ApplyTheme(theme, scale);
+
+        scale_ = scale;
+        theme_ = theme;
+        fontSize_ = fontSize;
+        fontsBuilt_ = true;
     }
 
-    bool DebugUi::WantsKeyboard() const
-    {
-        return ImGui::GetIO().WantCaptureKeyboard;
-    }
-
-    void DebugUi::RecordOverlay(CommandContext& commands)
+    void ImGuiLayer::RecordOverlay(CommandContext& commands)
     {
         // The backend binds its own root signature; it reads SRVs from the heap already set
         // by CommandContext::Begin.

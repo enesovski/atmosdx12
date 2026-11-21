@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -86,6 +87,9 @@ namespace atmos
         void Update(uint32_t frameIndex, const RenderScene& scene);
 
         void Cull(const Frustum& frustum, DrawList& out, bool includeTransparent) const;
+
+        // Draws of the given entities (sorted ids) inside the frustum, transparent ones included.
+        void CullEntities(const Frustum& frustum, std::span<const uint32_t> sortedEntities, DrawList& out) const;
         void SortTransparentBackToFront(DrawList& list, const DirectX::XMFLOAT3& eye) const;
 
         // The caller sets the pipeline.
@@ -102,6 +106,7 @@ namespace atmos
             const Mesh* mesh;
             uint32_t submeshIndex;
             DrawBucket bucket;
+            uint32_t entity;
             DirectX::BoundingBox worldBounds;
         };
 

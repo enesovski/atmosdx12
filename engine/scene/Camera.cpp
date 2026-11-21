@@ -34,6 +34,11 @@ namespace atmos
         fovDegrees_ = std::clamp(fovDegrees, 35.0f, 95.0f);
     }
 
+    void Camera::SetNearPlane(float nearPlane)
+    {
+        nearPlane_ = std::clamp(nearPlane, 0.01f, 10.0f);
+    }
+
     XMFLOAT3 Camera::GetForward() const
     {
         const float yaw = yawDegrees_ * DegreesToRadians;

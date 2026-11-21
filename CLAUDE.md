@@ -5,10 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 AtmosDX12 is a C++20 / Direct3D 12 / HLSL (SM 6.6) render engine in development, aiming for the scope of Unity's or
-Unreal's rendering layer. `engine/` builds the `AtmosEngine` static library and `app/` builds the `AtmosDX12`
-executable that drives it.
+Unreal's rendering layer. `engine/` builds the `AtmosEngine` static library, `editor/` builds the `AtmosEditor`
+library (a docked ImGui editor like Unity's or Unreal's), and `app/` builds the `AtmosDX12` executable that runs it.
 
-**ROADMAP.md is the plan of record.** Phases 0-3 are done; Phase 4 (atmosphere and post-processing) is next. Each phase's
+**ROADMAP.md is the plan of record.** Phases 0-4 are done; Phase 5 (image quality: motion vectors, TAA, HDR
+post) is next. The focus is rendering quality on static scenes (Sponza): reflections, GI and ray
+tracing. Animation, particles and terrain are out of scope. Each phase's
 decisions are recorded in `docs/phase-N-plan.md`. Follow
 the roadmap's order and its "done when" criteria, and say so when a task conflicts with it. ARCHITECTURE.md
 describes the current structure and records each design decision with its alternatives. Keep both in sync when the
@@ -24,13 +26,12 @@ cmake --build build --config Debug
 
 **Command-line options:**
 
-- With no arguments it loads `scenes/sponza.json` (found from the working directory or above the exe).
-- `--scene file` loads a `.json` scene or a single `.gltf`/`.glb`.
-- **In the app:**
-  - Hold the right mouse button to fly, as in a Unity or Unreal viewport: mouse look, WASD/QE, Shift, and the
-    wheel for speed.
-  - F1 toggles the debug UI.
-  - F5 saves the scene, including the current camera, back to its `.json`.
+- With no arguments it opens the last scene, else `scenes/sponza.json` (the project root is found from the working
+  directory or above the exe).
+- `--scene file` opens a `.json` scene or a single `.gltf`/`.glb`.
+- **In the editor:** RMB fly (WASD/QE, Shift, wheel = speed), Alt+LMB orbit, MMB pan, wheel dolly, F focus;
+  Q/W/E/R tools; Ctrl+Z/Y undo/redo; Ctrl+S (or F5) saves, including the current camera as the start view;
+  F11 or F1 fullscreen viewport. Help > Controls lists everything.
 - `--dump-frame` logs the first frame's render graph (live and culled passes) and culling stats.
 - `--gpu-validation` turns on GPU-based validation.
 - `--spawn-lights N` adds N random point lights.
@@ -41,10 +42,10 @@ cmake --build build --config Debug
   `-Zi -Od`.
 - **No tests or CI.** Verify with a warning-free `/W4` build, then run the exe and check the console for `D3D12:`
   messages; debug-layer output is forwarded to the log every frame.
-- **New `.cpp`/`.h` files** go into the explicit list in `engine/CMakeLists.txt` (no glob). Shaders in
-  `engine/shaders/` are picked up automatically.
-- **Third-party code** comes through CMake `FetchContent`, pinned to a tag, in `engine/ThirdParty.cmake`: cgltf,
-  nlohmann/json, DirectXTex and Dear ImGui. The first configure needs network access. DirectXTex is built with `/O2`
+- **New `.cpp`/`.h` files** go into the explicit list in `engine/CMakeLists.txt` or `editor/CMakeLists.txt` (no
+  glob). Shaders in `engine/shaders/` are picked up automatically.
+- **Third-party code** comes through CMake `FetchContent`, pinned to a tag or commit: cgltf, nlohmann/json and
+  DirectXTex in `engine/ThirdParty.cmake`; Dear ImGui (docking tag) and ImGuizmo in `editor/ThirdParty.cmake`. The first configure needs network access. DirectXTex is built with `/O2`
   even in Debug, because BC compression is unusably slow otherwise.
 - **Shader layout:** `Common.hlsli` (view constants, samplers), `Scene/` (draw and material loading, GBuffer
   encoding), `Lighting/` (BRDF, clusters, shadows, IBL, and `SurfaceLighting.hlsli`, the one lighting function
@@ -60,8 +61,9 @@ cmake --build build --config Debug
 ## Architecture
 
 ```
-app/ → runtime/ (AssetManager, RenderSceneBuilder) → graphics/Renderer → passes/ → rendergraph/ → d3d12/
-                 ↘ scene/ (graphics-free)   ↘ assets/ (CPU-only cooking)   ui/ → graphics (IOverlayRenderer)
+app/ → editor/ (EditorApp, panels, ImGui) → runtime/ (AssetManager, RenderSceneBuilder) → graphics/Renderer
+       → passes/ → rendergraph/ → d3d12/
+                 ↘ scene/ (graphics-free)   ↘ assets/ (CPU-only cooking)
 ```
 
 - **Layering:**
@@ -70,7 +72,19 @@ app/ → runtime/ (AssetManager, RenderSceneBuilder) → graphics/Renderer → p
   - `assets/` must not touch the GPU, and must stay thread-safe, because it runs on workers.
   - `scene/` stores asset handles, never GPU types.
   - Only `runtime/` combines scene + assets + graphics.
-  - The renderer never includes ImGui.
+  - **The engine never includes ImGui**; only `editor/` does. The renderer sees the editor UI as an
+    `IOverlayRenderer`, and editor visualization it must draw comes as data (`RenderScene::overlays`).
+- **Editor rules:**
+  - Panels derive from `editor/panels/Panel` and read/edit through `EditorContext`; they own no scene state.
+  - Edit the `Scene` directly for live feedback, then call `SceneDocument::MarkEdited("Label")`; the edit becomes
+    one undo step (a scene snapshot) when no widget or gizmo is active. Structural edits go through
+    `SceneDocument` (create, delete, duplicate, reparent) because they renumber entities.
+  - Actions that may need a prompt, a dialog or the window go through `EditorContext::requests`.
+  - Colors come from `EditorTheme` tokens (`GetThemeColors()`), never literals; icons from `style/Icons.h`;
+    property rows from `PropertyGrid` (reset arrows, units, tooltips).
+  - A new view mode is one entry in `editor/ViewModes.cpp`; a new render setting is a `RenderSettings` field,
+    its serializer key, and a row in `RenderSettingsPanel`.
+  - Editor state lives in `Saved/Editor/` (git-ignored): `Layout.ini` and `EditorPrefs.json`.
 - **Assets at runtime:** request with `AssetManager::LoadModel` (async). Call `AssetManager::Update()` once per frame
   on the main thread. `GetModel()` returns nullptr until the model is ready. GPU resources are created only on the
   main thread, and uploads go through `UploadQueue` (copy queue).

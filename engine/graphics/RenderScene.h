@@ -1,11 +1,12 @@
 #pragma once
 
-#include "graphics/RenderSettings.h"
+#include "scene/RenderSettings.h"
 
 #include <DirectXMath.h>
 
 #include <cmath>
 #include <numbers>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -38,12 +39,15 @@ namespace atmos
 
     struct Material;
 
+    inline constexpr uint32_t NoEntity = UINT32_MAX;
+
     // Owned by the asset manager. Each submesh uses materials[submesh.materialIndex].
     struct MeshInstance
     {
         const Mesh* mesh = nullptr;
         std::span<const Material* const> materials;
         DirectX::XMFLOAT4X4 world{};
+        uint32_t entity = NoEntity;  // the scene entity it came from (selection, picking)
     };
 
     enum class RenderLightType : uint32_t
@@ -65,6 +69,14 @@ namespace atmos
         bool castsShadows = false;
     };
 
+    // Editor visualization drawn over the final image. Empty by default, so games pay nothing.
+    struct ViewportOverlays
+    {
+        bool wireframe = false;
+        std::vector<uint32_t> selectedEntities;  // sorted; outlined
+        DirectX::XMFLOAT4 outlineColor{ 1.0f, 0.55f, 0.1f, 1.0f };
+    };
+
     // Renderer-facing world description, rebuilt every frame by runtime/RenderSceneBuilder.
     struct RenderScene
     {
@@ -73,5 +85,6 @@ namespace atmos
         RenderSettings settings;
         std::vector<MeshInstance> meshInstances;
         std::vector<RenderLight> lights;
+        ViewportOverlays overlays;
     };
 }

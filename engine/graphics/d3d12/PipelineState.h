@@ -55,6 +55,7 @@ namespace atmos
         int32_t depthBias = 0;              // Reverse-Z: negative pushes depth away from the viewer.
         float slopeScaledDepthBias = 0.0f;
         bool depthClip = true;              // Off for directional shadows: casters behind the near plane clamp.
+        bool wireframe = false;
         D3D12_PRIMITIVE_TOPOLOGY_TYPE topology = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     };
 
@@ -68,6 +69,8 @@ namespace atmos
     class PipelineState
     {
     public:
+        PipelineState() = default;
+
         static PipelineState CreateGraphics(const GraphicsDevice& device, const GraphicsPipelineDesc& desc);
         static PipelineState CreateCompute(const GraphicsDevice& device, const ComputePipelineDesc& desc);
 
@@ -80,7 +83,7 @@ namespace atmos
                       D3D_PRIMITIVE_TOPOLOGY topology);
 
         ComPtr<ID3D12PipelineState> pipelineState_;
-        PipelineType type_;
-        D3D_PRIMITIVE_TOPOLOGY topology_;
+        PipelineType type_ = PipelineType::Graphics;
+        D3D_PRIMITIVE_TOPOLOGY topology_ = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
     };
 }

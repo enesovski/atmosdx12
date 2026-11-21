@@ -5,6 +5,7 @@
 #include "graphics/lighting/SkyLight.h"
 #include "graphics/passes/DeferredLightingPass.h"
 #include "graphics/passes/DepthPrepass.h"
+#include "graphics/passes/EditorOverlayPass.h"
 #include "graphics/passes/GBufferPass.h"
 #include "graphics/passes/LightClusteringPass.h"
 #include "graphics/passes/ShadowPass.h"
@@ -32,7 +33,8 @@ namespace atmos
 
     // Renders the scene for one camera, deferred (Unreal's DeferredShadingSceneRenderer):
     //   Prepare()   CPU: draw data, lights, shadow views, per-view culling, uploads
-    //   AddPasses() GPU: shadows, depth prepass, GBuffer, light grid, lighting, sky, transparents, tonemap
+    //   AddPasses() GPU: shadows, depth prepass, GBuffer, light grid, lighting, sky, transparents, tonemap,
+    //               then editor overlays (wireframe, selection outline) when the scene asks for them
     class SceneRenderer
     {
     public:
@@ -43,6 +45,7 @@ namespace atmos
         void AddPasses(RenderGraph& graph, const RenderScene& scene, RGTexture output);
 
         const SceneRenderStats& GetStats() const { return stats_; }
+        void RequestSkyLightRecapture() { skyLight_.RequestRecapture(); }
 
     private:
         GpuScene gpuScene_;
@@ -59,8 +62,10 @@ namespace atmos
         SkyPass skyPass_;
         TransparentPass transparentPass_;
         TonemapPass tonemapPass_;
+        EditorOverlayPass editorOverlayPass_;
 
         DrawList cameraDrawList_;
+        DrawList selectionDrawList_;
         std::vector<DrawList> shadowDrawLists_;
         LightingConstants lightingConstants_{};
         SceneRenderStats stats_;

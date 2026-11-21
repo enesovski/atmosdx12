@@ -12,7 +12,7 @@ namespace atmos
     {
         Opaque,
         Mask,   // Alpha test against alphaCutoff.
-        Blend,  // Rendered as Mask until the transparent pass exists (Phase 3).
+        Blend,  // Alpha-blended in the sorted transparent pass.
     };
 
     enum class MaterialTextureSlot : uint32_t

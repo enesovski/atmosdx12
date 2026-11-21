@@ -41,14 +41,19 @@ namespace atmos
         out.sky.sunElevationDegrees = scene.environment.sunElevationDegrees;
         out.sky.sunIntensity = scene.environment.sunIntensity;
         out.postProcess.exposure = scene.environment.exposure;
+        out.settings = scene.renderSettings;
         out.meshInstances.clear();
         out.lights.clear();
 
         const std::vector<XMFLOAT4X4> worldMatrices = scene.ComputeWorldMatrices();
+        const std::vector<bool> active = scene.ComputeActiveInHierarchy();
         const std::span<const Entity> entities = scene.GetEntities();
 
         for (size_t i = 0; i < entities.size(); ++i)
         {
+            if (!active[i])
+                continue;
+
             if (entities[i].light)
                 AddLight(*entities[i].light, worldMatrices[i], out);
 
@@ -72,6 +77,7 @@ namespace atmos
                 MeshInstance& meshInstance = out.meshInstances.emplace_back();
                 meshInstance.mesh = mesh;
                 meshInstance.materials = model->materialPointers;
+                meshInstance.entity = static_cast<uint32_t>(i);
                 XMStoreFloat4x4(&meshInstance.world, XMLoadFloat4x4(&instance.transform) * entityWorld);
             }
         }

@@ -57,7 +57,7 @@ float3 EvaluateImageBasedLighting(Surface surface)
     float3 prefiltered = specularCube.SampleLevel(LinearClamp, reflection, mip).rgb;
     float3 specular = prefiltered * (surface.f0 * scaleBias.x + scaleBias.y);
 
-    return (diffuse + specular) * surface.occlusion * Lighting.ambientIntensity;
+    return (diffuse * Lighting.ambientIntensity + specular * Lighting.reflectionIntensity) * surface.occlusion;
 }
 
 #endif

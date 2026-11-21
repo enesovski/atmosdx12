@@ -20,8 +20,8 @@ namespace atmos
 
         // `drawLists` is parallel to `views`. Returns invalid handles for features with no views.
         void AddToGraph(RenderGraph& graph, const GpuScene& scene, std::span<const ShadowView> views,
-                        std::span<const DrawList> drawLists, uint32_t viewBufferIndex, RGTexture& cascadeShadowMap,
-                        RGTexture& shadowAtlas) const;
+                        std::span<const DrawList> drawLists, uint32_t viewBufferIndex, uint32_t cascadeResolution,
+                        RGTexture& cascadeShadowMap, RGTexture& shadowAtlas) const;
 
     private:
         DepthPipelines cascadePipelines_;

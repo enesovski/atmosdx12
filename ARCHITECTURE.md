@@ -3,20 +3,32 @@
 ## Modules and dependencies
 
 ```text
-app/ (AtmosDX12.exe)            Application (frame loop), FlyCameraController, DebugPanels
+app/ (AtmosDX12.exe)            main: command line, DPI awareness, runs the EditorApp
+   | links
+editor/ (AtmosEditor.lib)       the only code that uses ImGui (docking) and ImGuizmo
+   EditorApp                    frame loop: input, camera, panels, undo commit, render
+   EditorContext                what panels read and edit: document, prefs, viewport/gizmo settings, requests
+   SceneDocument, UndoStack,    the open scene, its file, selection and snapshot undo
+   EditorSelection
+   ImGuiLayer                   ImGui Win32 + D3D12 backends, fonts, theme; an IOverlayRenderer
+   panels/                      Viewport, Hierarchy, Inspector, Render Settings, Content Browser, Console,
+                                Profiler, Render Graph; Preferences window
+   shell/                       main menu, toolbar, status bar
+   style/                       EditorTheme (color tokens + metrics), EditorFonts, Icons
+   widgets/                     PropertyGrid, section headers, icon buttons, search fields
+   tools/                       CameraController (fly/orbit/pan/focus), Gizmo, Picking, FileDialogs
    | links
 engine/ (AtmosEngine.lib)
-   ui/                          DebugUi: ImGui Win32 + D3D12 backends, an IOverlayRenderer
    runtime/                     AssetManager (handles, async loading, GPU residency), RenderSceneBuilder
-   graphics/                    Renderer, SceneRenderer, RenderScene, RenderSettings, RenderView, GpuScene, Mesh,
-                                Material, Frustum
+   graphics/                    Renderer, SceneRenderer, RenderScene, RenderView, GpuScene, Mesh, Material, Frustum
    graphics/lighting/           LightSetup (lights, shadow views, cascades), SkyLight (IBL), LightingTypes
    graphics/rendergraph/        RenderGraph, TransientResourcePool
    graphics/passes/             DepthPrepass, ShadowPass, GBufferPass, LightClusteringPass, DeferredLightingPass,
-                                SkyPass, TransparentPass, TonemapPass (+ DepthPipelines shared by depth passes)
+                                SkyPass, TransparentPass, TonemapPass, EditorOverlayPass
+                                (+ DepthPipelines shared by depth passes)
    graphics/d3d12/              Thin D3D12 layer: device, queues, heaps, textures, buffers, pipelines, commands
    assets/                      glTF import, model/texture cookers, asset cache -> CPU ModelData/TextureData
-   scene/                       Scene, Entity, Transform, SceneSerializer (JSON), Camera
+   scene/                       Scene, Entity, Transform, RenderSettings, SceneSerializer (JSON), Camera
    platform/                    Window, Input, Paths (Win32)
    core/                        Log, Assert, FrameTimer, ThreadPool, Handle, string helpers
    shaders/                     HLSL, compiled at runtime by DXC:
@@ -32,23 +44,28 @@ engine/ (AtmosEngine.lib)
 - `runtime/` is the only module that knows both `scene/` and `graphics/`.
 - `assets/` is CPU-only and thread-safe. It produces `ModelData`/`TextureData` and uses the CPU-only data headers
   `graphics/MeshData.h` and `graphics/MaterialData.h`.
-- `scene/` holds asset *handles*, never GPU types.
-- The renderer knows the debug UI only as an `IOverlayRenderer`.
+- `scene/` holds asset *handles*, never GPU types. `RenderSettings` lives there as plain data because the scene
+  file stores it.
+- **The engine never includes ImGui.** The renderer knows the editor UI only as an `IOverlayRenderer`; editor
+  visualization the renderer must draw (wireframe, selection outline) arrives as data in `RenderScene::overlays`.
 
-**The app talks to the engine through:**
+**The editor talks to the engine through:**
 
-- `Renderer`: `Render`, `Resize`, `GetDevice`, `GetFrameStats`, `RequestFrameDump`
-- `AssetManager`: `LoadModel`, `Update`, `GetStats`
-- `Scene` and its serializer
+- `Renderer`: `Render` (optionally into a viewport texture), `Resize`, `GetFrameStats` (per-pass GPU times,
+  resources), `RequestFrameDump`, `RequestSkyLightRecapture`, `GetDevice`
+- `AssetManager`: `LoadModel`, `Update`, `GetModel`, `GetStats`
+- `Scene` (including structural edits) and its serializer
 - `RequestSceneAssets` and `BuildRenderScene`
-- `DebugUi`, `Camera`, `Window`, `Input`
+- `Camera`, `Window`, `Input`, `log::AddSink`
 
 ## Ownership
 
 ```text
-Application
-|-- Input, Window, Camera, FlyCameraController, FrameTimer
-|-- Scene (entities, environment, start camera) -> RenderScene (rebuilt every frame)
+EditorApp
+|-- ConsoleLog              first member, so it captures startup messages through a log sink
+|-- ProjectPaths, EditorPrefs   project root, Saved/Editor/ (layout ini, prefs json)
+|-- Input, Window, Camera, CameraController, FrameTimer
+|-- SceneDocument           Scene + path + EditorSelection + UndoStack -> RenderScene (rebuilt every frame)
 |-- Renderer
 |   |-- GraphicsDevice      factory, adapter, device, graphics + copy queues, 3 DescriptorHeaps,
 |   |                       DeferredReleaseQueue, bindless root signature, info queue
@@ -58,7 +75,7 @@ Application
 |   |-- CommandContext      barrier batching, target binding, root binding, draws
 |   |-- ShaderCompiler      DXC
 |   |-- TransientResourcePool  transient textures and buffers reused across frames
-|   |-- GpuTimer            timestamp queries around the frame
+|   |-- GpuProfiler         timestamps for the frame and every render-graph pass
 |   `-- SceneRenderer       decides what is drawn
 |       |-- GpuScene        per-frame DrawData + material buffers; per-view culled DrawLists
 |       |-- LightSetup      GPU light list, camera + shadow views (cascades, atlas tiles)
@@ -66,19 +83,44 @@ Application
 |       |-- view and light FrameStructuredBuffers (per frame slot)
 |       `-- passes          each owns its PipelineStates
 |-- AssetManager            ThreadPool, UploadQueue (copy queue), models, textures, fallbacks
-`-- DebugUi                 destroyed first; the app waits for the GPU before shutdown
+|-- ImGuiLayer              ImGui context, backends, font atlas
+|-- EditorContext           references to the above + viewport, gizmo and request state
+`-- panels                  the viewport panel owns the viewport texture; destroyed before the renderer
 ```
 
 ## Application frame
 
 ```text
-messages -> resize -> DebugUi::BeginFrame -> shortcuts (F1/F5) -> fly camera (RMB held, cursor locked)
+messages -> resize -> console drain -> appearance (DPI/theme/font changes rebuild the atlas)
+-> ImGuiLayer::BeginFrame
+-> CameraController::Update        uses the viewport's hover state from the last frame
 -> AssetManager::Update            integrate finished jobs, record uploads, mark ready, patch material textures
--> DebugPanels::Draw -> DebugUi::EndFrame   edits environment, RenderSettings, lights; may spawn lights
--> BuildRenderScene(scene, assets) entities x model nodes -> MeshInstances, light entities -> RenderLights
--> renderScene.settings = the app's RenderSettings
--> Renderer::Render(renderScene, view, debugUi)
+-> shortcuts -> menu, toolbar, status bar, dock space, panels   panels edit the scene and call MarkEdited
+-> requests                        open/new/exit (through the unsaved-changes prompt), save, focus, layout
+-> SceneDocument::CommitPendingEdit  once nothing is being dragged: one undo snapshot per finished edit
+-> ImGuiLayer::EndFrame
+-> BuildRenderScene + viewport state (view mode, wireframe, selected entities, outline color)
+-> Renderer::Render(renderScene, view, imguiLayer, viewport texture)
 ```
+
+## Editor (`editor/`)
+
+- **Viewport.** The scene renders into a texture the viewport panel owns, sized to the panel (times the
+  resolution scale). `Renderer::Render` imports it into the graph; the `Overlay` pass reads it while ImGui draws
+  the whole window into the back buffer. F11 renders straight to the back buffer instead.
+- **Editing and undo.** Panels change the `Scene` directly, so feedback is live, then call
+  `SceneDocument::MarkEdited(label)`. When no widget or gizmo is active, the pending edit becomes one undo step: a
+  snapshot of the whole scene and selection (scenes are small value types, so snapshots are cheap and correct for
+  every kind of edit). Structural edits (`DestroyEntities`, `DuplicateEntity`, `SetParent`) keep entities
+  parents-first and return id remaps, which the selection follows.
+- **Selection and picking.** Light icons are picked in screen space; models by ray against their submesh bounds
+  (whole-entity selection). `RenderScene::overlays.selectedEntities` drives the engine's selection outline.
+- **Panels** derive from `Panel` (stable `###` window ids, close-to-hide) and draw from `EditorContext`. Actions
+  that may need a prompt or a dialog go through `EditorContext::requests`; the app performs them after the UI.
+- **Style.** `EditorTheme` maps color tokens and metrics onto `ImGuiStyle`; `EditorFonts` builds Segoe UI,
+  Cascadia Mono and Segoe Fluent Icons at the monitor's DPI. Panels never use raw colors.
+- **Persistence.** The dock layout is `Saved/Editor/Layout.ini`; preferences and recent scenes are
+  `Saved/Editor/EditorPrefs.json`. Render settings and camera bookmarks are saved with the scene (format 2).
 
 ## Input
 
@@ -89,10 +131,11 @@ messages -> resize -> DebugUi::BeginFrame -> shortcuts (F1/F5) -> fly camera (RM
   - raw mouse motion (`WM_INPUT`), which is unaccelerated and unaffected by screen edges or cursor clipping
 - **`Input`** holds held state, plus once-per-press events (`ConsumeKeyPress`, `ConsumeMouseButtonPress`) and
   accumulated deltas, which the app consumes once per frame. Focus loss resets it.
-- **`FlyCameraController`** (app) starts a flight on a right-button press that is not over the UI, and flies until
-  the button is released. While flying, `Window::SetCursorLocked(true)` hides the cursor and pins it in place.
-- **ImGui** sees every message first through `Window::SetMessageHandler`. `DebugUi::WantsMouse` keeps clicks on UI
-  windows from starting a flight.
+- **`CameraController`** (editor) starts a drag (RMB fly, Alt+LMB orbit, MMB pan) only when the pointer is over
+  the viewport image. While dragging, `Window::SetCursorLocked(true)` hides the cursor and pins it in place, and
+  raw mouse deltas drive the camera. Keys and buttons come from ImGui's input state.
+- **ImGui** sees every message first through `Window::SetMessageHandler`; the editor also intercepts `WM_CLOSE`
+  to ask about unsaved changes.
 
 ## Asset pipeline
 
@@ -122,7 +165,8 @@ LoadCookedTexture(path, kind)                   create Texture (all mips), recor
    with, and opens the command list.
 2. `UploadAllocator::BeginFrame` resets the slot's upload region. `CommandContext::Begin` binds the descriptor heap,
    then the root signature.
-3. `ViewConstants` are bound once, for both graphics and compute. `GpuTimer::Begin` starts the frame timestamp.
+3. `ViewConstants` are bound once, for both graphics and compute, sized to the render target (the viewport
+   texture or the back buffer). `GpuProfiler::BeginFrame` reads back this slot's previous timings.
 4. `SceneRenderer::Prepare`:
    - `GpuScene::Update` writes a `DrawData` for every (instance, submesh) and a `MaterialGpuData` for every
      material into this slot's buffers. Nothing is culled here.
@@ -130,14 +174,16 @@ LoadCookedTexture(path, kind)                   create Texture (all mips), recor
      shadowed spot light and six per shadowed point light (nearest lights first).
    - `GpuScene::Cull` fills one `DrawList` per view (camera; each shadow view without transparents). Transparent
      camera draws are sorted back to front.
-5. A `RenderGraph` is built: import the back buffer, `SceneRenderer::AddPasses`, then an `Overlay` pass when a
-   debug UI is given. Each pass creates the transient outputs it owns and returns their handles.
+5. A `RenderGraph` is built: import the back buffer (and the viewport texture, if any),
+   `SceneRenderer::AddPasses`, then an `Overlay` pass when an overlay is given. Each pass creates the transient
+   outputs it owns and returns their handles.
 6. `RenderGraph::Execute`:
    - culls unused passes
    - derives usage flags and takes transients from the `TransientResourcePool`
-   - for each live pass: transitions, UAV barriers, binds targets, applies clears, runs the pass
+   - for each live pass: transitions, UAV barriers, binds targets, applies clears, runs the pass inside a
+     PIX event and a `GpuProfiler` timestamp pair
    - leaves the back buffer in PRESENT
-7. `GpuTimer::End`, Submit, Present, `EndFrame` (signal the fence and rotate the slot), then the pool's `EndFrame`
+7. `GpuProfiler::EndFrame`, Submit, Present, `EndFrame` (signal the fence and rotate the slot), then the pool's `EndFrame`
    (evicts resources unused for 3 frames). Pass list, scene stats and GPU time are kept for `GetFrameStats()`.
 
 ```text
@@ -150,8 +196,11 @@ Light Clustering    compute     Cluster Light Counts / Indices (16x9x24 clusters
 Deferred Lighting   compute     reads depth, GBuffer, shadows, clusters, IBL; adds to Scene Color (UAV)
 Sky                 depth-read  Scene Color (load)
 Transparent         depth-read  Scene Color (alpha blend, forward, same lighting); culled when empty
-Tonemap             read        Scene Color -> Back Buffer (passthrough for debug views)
-Overlay             (optional)  Back Buffer   ImGui
+Tonemap             read        Scene Color -> Viewport or Back Buffer (passthrough for debug views)
+Wireframe           depth-read  Viewport (alpha-blended lines)                   editor overlay, when enabled
+Selection Mask      color       Selection Mask (R8, selected draws, no depth)    editor overlay, when selected
+Selection Outline   read        Selection Mask -> Viewport (edge detect)        editor overlay, when selected
+Overlay             (optional)  reads Viewport; Back Buffer (clear)   ImGui
 ```
 
 ## Render graph (`graphics/rendergraph/`)
@@ -296,13 +345,13 @@ There is one root signature for every pipeline (`BindlessRootSignature.h`):
 |---|---|---|---|
 | Graphics API layer | D3D12 only, thin wrappers | Multi-API RHI | Unreal (RHI), Unity (GfxDevice), bgfx, The Forge are multi-API |
 | Resource binding | Bindless SM 6.6, one root signature | Per-pass root signatures + descriptor tables | Doom Eternal and The Forge are bindless; Unreal 5 has it as an option |
-| Shader compiler | DXC at runtime | FXC, Slang, offline compilation | Shipping engines compile offline (Unreal DDC, Unity variants); offline comes in Phase 6 |
+| Shader compiler | DXC at runtime | FXC, Slang, offline compilation | Shipping engines compile offline (Unreal DDC, Unity variants); offline comes in Phase 10 |
 | Command recording | `CommandContext` with tracked states | Hand-written barriers | MiniEngine (`CommandContext` + `GpuResource`) |
 | Frame orchestration | Per-frame render graph, setup and execute lambdas | Unreal RDG parameter structs; retained graphs; Godot 4.3's command-level graph | Frostbite FrameGraph, Unity RenderGraph, Filament |
-| Transient memory | Pooled committed textures | Placed + aliased resources | Frostbite, Unreal RDG, HDRP alias; v2 here (Phase 5) |
+| Transient memory | Pooled committed textures | Placed + aliased resources | Frostbite, Unreal RDG, HDRP alias; v2 here (Phase 10) |
 | Vertex input | Vertex pulling, separate position stream | Input-assembler layouts | Nanite and GPU-driven pipelines pull; Unreal splits positions out |
 | Visibility | Depth prepass + `EQUAL` | No prepass; visibility buffer | HDRP, URP depth priming, Unreal `r.EarlyZPass`, Doom 2016 |
-| Per-draw data | Per-frame `DrawData` structured buffer + root-constant index | CBV per draw; persistent GPU scene | Unreal GPUScene (Phase 5 here) |
+| Per-draw data | Per-frame `DrawData` structured buffer + root-constant index | CBV per draw; persistent GPU scene | Unreal GPUScene (Phase 10 here) |
 | Culling | Brute-force CPU frustum test over a flat array | BVH/octree; GPU culling | Unreal brute-forces in parallel; Godot uses a BVH |
 | Resource release | Fence-tagged deferred release queue | Flush before destroy; ref-counted RHI | Unreal defers RHI deletes until the GPU is done |
 | Third-party code | CMake `FetchContent`, pinned | vcpkg, Conan, vendoring | Godot and Unreal vendor theirs |
@@ -317,7 +366,10 @@ There is one root signature for every pipeline (`BindlessRootSignature.h`):
 | Async loading | Thread pool (CPU) + copy queue (GPU), resources created on the main thread | Worker-thread resource creation; DirectStorage | Copy-queue streaming in Unreal and Unity |
 | Materials | Per-frame material table + index per draw | Per-draw CBV; persistent material buffer | Unity SRP Batcher, Unreal persistent material data |
 | Alpha modes | Pipeline buckets; alpha test only in the depth prepass | Dynamic branching; full PSO keys | Unreal/HDRP masked depth prepass |
-| Debug UI | Dear ImGui behind `IOverlayRenderer` | Custom retained UI | Ubiquitous in engine tooling |
+| Editor UI | Dear ImGui (docking) in a separate `editor/` library, behind `IOverlayRenderer` | Qt; custom retained UI (Unreal Slate, Unity UI Toolkit) | Ubiquitous in engine tooling; the editor/runtime split follows Unreal and Unity |
+| Viewport | Scene rendered into a panel-sized texture | Render behind the UI with a hole | Unity, Unreal, Godot |
+| Undo | Whole-scene snapshots, one per finished edit | Command objects; transaction log (Unreal `FTransaction`) | Small scenes make snapshots trivially correct |
+| Picking | CPU: light icons + ray vs submesh bounds | GPU id buffer (Unity, Unreal hit proxies) | Enough for whole-entity selection in Sponza |
 | Lighting path | Deferred GBuffer + compute lighting | Forward+; visibility buffer | Unreal, HDRP, Frostbite are deferred; Doom 2016 is forward+ |
 | Light culling | Clustered (froxels) in compute | Tiled 2D; per-object lists | HDRP, Doom 2016, Unreal (forward) |
 | Sun shadows | 4 stable CSM, PCF | Virtual shadow maps; ray tracing | Unreal 5 VSM; Unity and HDRP CSM |
@@ -339,3 +391,5 @@ There is one root signature for every pipeline (`BindlessRootSignature.h`):
 - No asset unloading or hot reload yet. Single-threaded command recording on one direct queue.
 - `GpuScene` holds at most 16,384 draws and 4,096 materials per frame, and logs a warning beyond that.
 - The render graph does not alias memory or reorder passes, and runs everything on the direct queue.
+- Editor: multi-selection edits and moves only the primary entity; picking selects whole entities; no material
+  thumbnails; panels cannot float as separate OS windows (no ImGui multi-viewport).

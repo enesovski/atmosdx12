@@ -80,7 +80,9 @@ namespace atmos
         float specularMipCount;
 
         uint32_t debugView;
-        float padding[3];
+        uint32_t shadowFilter;
+        float reflectionIntensity;
+        float padding;
     };
 
     static_assert(sizeof(LightingConstants) == 176);

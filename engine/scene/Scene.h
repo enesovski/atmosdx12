@@ -1,9 +1,11 @@
 #pragma once
 
 #include "core/Handle.h"
+#include "scene/RenderSettings.h"
 
 #include <DirectXMath.h>
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -24,6 +26,9 @@ namespace atmos
         DirectX::XMFLOAT3 scale{ 1.0f, 1.0f, 1.0f };
 
         DirectX::XMMATRIX ToMatrix() const;
+
+        // Inverse of ToMatrix for scale * rotation * translation matrices (no shear).
+        static Transform FromMatrix(DirectX::FXMMATRIX matrix);
     };
 
     // `handle` is assigned at runtime by the asset manager.
@@ -56,6 +61,7 @@ namespace atmos
         std::string name;
         Transform transform;
         EntityId parent = InvalidEntity;
+        bool active = true;  // inactive entities and their children are not rendered
         std::optional<ModelComponent> model;
         std::optional<LightComponent> light;
     };
@@ -64,11 +70,11 @@ namespace atmos
     {
         float sunAzimuthDegrees = 30.0f;
         float sunElevationDegrees = 26.1f;
-        float sunIntensity = 1.0f;
+        float sunIntensity = 8.0f;  // illuminance; local lights use the same scale
         float exposure = 1.0f;
     };
 
-    // Where the viewer starts; saved with the scene.
+    // A point of view; the start camera and the bookmarks are saved with the scene.
     struct SceneCamera
     {
         DirectX::XMFLOAT3 position{ 0.0f, 2.0f, -8.0f };
@@ -78,9 +84,13 @@ namespace atmos
     };
 
     // Graphics-free world description; converted to a RenderScene every frame.
+    // Entities are stored parents-first: an entity's parent always has a lower id. Structural
+    // edits (destroy, reparent) keep that order and return how ids moved.
     class Scene
     {
     public:
+        static constexpr size_t BookmarkCount = 9;
+
         // Parents must be created before their children.
         EntityId CreateEntity(std::string name, EntityId parent = InvalidEntity);
 
@@ -88,14 +98,37 @@ namespace atmos
         const Entity& GetEntity(EntityId id) const { return entities_[id]; }
         std::span<Entity> GetEntities() { return entities_; }
         std::span<const Entity> GetEntities() const { return entities_; }
+        size_t GetEntityCount() const { return entities_.size(); }
+        bool IsValid(EntityId id) const { return id < entities_.size(); }
+
+        // True if `ancestor` is `id` or one of its parents.
+        bool IsDescendantOf(EntityId id, EntityId ancestor) const;
+
+        // Removes the entities and all their descendants. Returns old id -> new id (InvalidEntity if removed).
+        std::vector<EntityId> DestroyEntities(std::span<const EntityId> ids);
+
+        // Copies the entity and its descendants as its last sibling. Returns the copy's id and old -> new ids.
+        EntityId DuplicateEntity(EntityId id, std::vector<EntityId>& remap);
+
+        // Reparents `id` (InvalidEntity = root), keeping its world transform. Fails on cycles.
+        // Returns old id -> new id, or an empty vector if nothing changed.
+        std::vector<EntityId> SetParent(EntityId id, EntityId parent);
 
         // Indexed by EntityId.
         std::vector<DirectX::XMFLOAT4X4> ComputeWorldMatrices() const;
 
+        // An entity is active in the hierarchy if it and all its parents are active.
+        std::vector<bool> ComputeActiveInHierarchy() const;
+
         SceneEnvironment environment;
         SceneCamera camera;
+        RenderSettings renderSettings;
+        std::array<std::optional<SceneCamera>, BookmarkCount> cameraBookmarks;
 
     private:
+        // Restores parents-first order (depth-first, siblings in their current order).
+        std::vector<EntityId> SortHierarchy();
+
         std::vector<Entity> entities_;
     };
 }

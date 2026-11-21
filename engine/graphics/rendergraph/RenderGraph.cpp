@@ -1,6 +1,8 @@
 #include "graphics/rendergraph/RenderGraph.h"
 #include "graphics/rendergraph/TransientResourcePool.h"
 #include "graphics/d3d12/CommandContext.h"
+#include "graphics/d3d12/D3D12Utils.h"
+#include "graphics/d3d12/GpuProfiler.h"
 #include "core/Assert.h"
 #include "core/Log.h"
 #include "core/StringUtils.h"
@@ -134,7 +136,7 @@ namespace atmos
         return !Writes(access) || access.access == Access::ReadWrite || !OverwritesWholeResource(access);
     }
 
-    void RenderGraph::Execute(CommandContext& commands)
+    void RenderGraph::Execute(CommandContext& commands, GpuProfiler* profiler)
     {
         CullPasses();
         DeriveTransientUsage();
@@ -142,7 +144,7 @@ namespace atmos
         for (Pass& pass : passes_)
         {
             if (!pass.culled)
-                ExecutePass(pass, commands);
+                ExecutePass(pass, commands, profiler);
         }
 
         for (Resource& resource : resources_)
@@ -244,7 +246,7 @@ namespace atmos
         return resource;
     }
 
-    void RenderGraph::ExecutePass(Pass& pass, CommandContext& commands)
+    void RenderGraph::ExecutePass(Pass& pass, CommandContext& commands, GpuProfiler* profiler)
     {
         struct RequiredState
         {
@@ -325,6 +327,7 @@ namespace atmos
         }
 
         const ScopedGpuEvent event(commands, pass.name.c_str());
+        const uint32_t scope = profiler ? profiler->BeginScope(commands.GetNativeCommandList(), pass.name) : 0;
 
         if (!colorTargets.empty() || depthTarget)
             commands.SetRenderTargets(colorTargets, depthTarget, readOnlyDepth, depthSlice);
@@ -344,6 +347,9 @@ namespace atmos
 
         RGContext context(commands, *this);
         pass.execute(context);
+
+        if (profiler)
+            profiler->EndScope(commands.GetNativeCommandList(), scope);
     }
 
     const std::wstring& RenderGraph::GetName(const Resource& resource) const
@@ -357,52 +363,73 @@ namespace atmos
         infos.reserve(passes_.size());
 
         for (const Pass& pass : passes_)
-            infos.push_back({ pass.name, pass.culled });
+            infos.push_back({ .name = pass.name, .culled = pass.culled, .accesses = DescribeAccesses(pass) });
 
         return infos;
     }
 
-    void RenderGraph::LogSummary() const
+    std::vector<RenderResourceInfo> RenderGraph::GetResourceInfos() const
+    {
+        std::vector<RenderResourceInfo> infos;
+        infos.reserve(resources_.size());
+
+        for (const Resource& resource : resources_)
+            infos.push_back({ GetName(resource), DescribeResource(resource), resource.imported });
+
+        return infos;
+    }
+
+    std::vector<std::string> RenderGraph::DescribeAccesses(const Pass& pass) const
     {
         static constexpr const char* AccessNames[] = { "read", "color", "depth-write", "depth-read", "uav" };
         static constexpr const char* LoadOpNames[] = { "load", "clear", "dont-care" };
 
+        std::vector<std::string> accesses;
+
+        for (const PassAccess& access : pass.accesses)
+        {
+            std::string text = std::format("{}({}", ToUtf8(GetName(resources_[access.resource])),
+                                           AccessNames[static_cast<int>(access.access)]);
+
+            if (access.access == Access::ColorWrite || access.access == Access::DepthWrite)
+                text += std::format(", {}", LoadOpNames[static_cast<int>(access.loadOp)]);
+
+            if (access.subresource != RGBuilder::All)
+                text += std::format(", sub {}", access.subresource);
+
+            accesses.push_back(text + ")");
+        }
+
+        return accesses;
+    }
+
+    std::string RenderGraph::DescribeResource(const Resource& resource)
+    {
+        if (resource.isBuffer)
+            return std::format("buffer {} B", resource.bufferDesc.size);
+
+        const TextureDesc& desc = resource.textureDesc;
+        return std::format("texture {}x{}x{} {}", desc.width, desc.height, desc.arraySize, GetFormatName(desc.format));
+    }
+
+    void RenderGraph::LogSummary() const
+    {
         log::Info("Render graph: {} passes, {} resources", passes_.size(), resources_.size());
 
         for (const Pass& pass : passes_)
         {
             std::string accesses;
 
-            for (const PassAccess& access : pass.accesses)
-            {
-                accesses += std::format(" {}({}", ToUtf8(GetName(resources_[access.resource])),
-                                        AccessNames[static_cast<int>(access.access)]);
-
-                if (access.access == Access::ColorWrite || access.access == Access::DepthWrite)
-                    accesses += std::format(", {}", LoadOpNames[static_cast<int>(access.loadOp)]);
-
-                if (access.subresource != RGBuilder::All)
-                    accesses += std::format(", sub {}", access.subresource);
-
-                accesses += ")";
-            }
+            for (const std::string& access : DescribeAccesses(pass))
+                accesses += " " + access;
 
             log::Info("  [{}] {}:{}", pass.culled ? "culled" : "live", ToUtf8(pass.name), accesses);
         }
 
         for (const Resource& resource : resources_)
         {
-            if (resource.isBuffer)
-            {
-                log::Info("  buffer {} {} B {}", ToUtf8(GetName(resource)), resource.bufferDesc.size,
-                          resource.imported ? "imported" : "transient");
-            }
-            else
-            {
-                log::Info("  texture {} {}x{}x{} {}", ToUtf8(GetName(resource)), resource.textureDesc.width,
-                          resource.textureDesc.height, resource.textureDesc.arraySize,
-                          resource.imported ? "imported" : "transient");
-            }
+            log::Info("  {} {} {}", ToUtf8(GetName(resource)), DescribeResource(resource),
+                      resource.imported ? "imported" : "transient");
         }
     }
 }

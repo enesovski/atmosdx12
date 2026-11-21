@@ -45,7 +45,9 @@ struct LightingConstants
     float specularMipCount;
 
     uint debugView;
-    float3 padding;
+    uint shadowFilter;
+    float reflectionIntensity;
+    float padding;
 };
 
 ConstantBuffer<LightingConstants> Lighting : register(b2);
@@ -68,15 +70,20 @@ struct LightData
     uint2 padding;
 };
 
-// Mirrors DebugView in graphics/RenderSettings.h.
+// Mirrors DebugView in scene/RenderSettings.h.
 static const uint DebugViewLit = 0;
-static const uint DebugViewBaseColor = 1;
-static const uint DebugViewNormals = 2;
-static const uint DebugViewRoughness = 3;
-static const uint DebugViewMetallic = 4;
-static const uint DebugViewAmbientOcclusion = 5;
-static const uint DebugViewShadowCascades = 6;
-static const uint DebugViewLightComplexity = 7;
+static const uint DebugViewLightingOnly = 1;
+static const uint DebugViewBaseColor = 2;
+static const uint DebugViewNormals = 3;
+static const uint DebugViewRoughness = 4;
+static const uint DebugViewMetallic = 5;
+static const uint DebugViewAmbientOcclusion = 6;
+static const uint DebugViewShadowCascades = 7;
+static const uint DebugViewLightComplexity = 8;
+
+// Mirrors ShadowFilter in scene/RenderSettings.h.
+static const uint ShadowFilterHard = 0;
+static const uint ShadowFilterPcf3x3 = 1;
 
 // A lit surface point, independent of where its data came from (GBuffer or forward material).
 struct Surface

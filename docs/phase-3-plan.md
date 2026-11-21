@@ -16,7 +16,7 @@
   component. Only point and spot lights are entities.
 - PCF is a 3x3 tent of hardware comparisons, not a wider Poisson kernel.
 - One transparent PSO with culling off covers single- and double-sided materials.
-- Shadow maps are not cached between frames, and there are no motion vectors yet (Phase 4 TAA needs them).
+- Shadow maps are not cached between frames, and there are no motion vectors yet (Phase 5 TAA needs them).
 - `SceneRenderer` was added between `Renderer` (frame loop, GPU) and the passes, so the renderer stays a frame
   driver and what is drawn lives in one place.
 
@@ -154,7 +154,7 @@ prefiltered`, both scaled by material AO.
   - AO
   - shadow cascades
   - light-cluster heat map
-- **Stats:** visible lights and the number of shadow-casting lights. Per-pass GPU timestamps arrive in Phase 5,
+- **Stats:** visible lights and the number of shadow-casting lights. Per-pass GPU timestamps arrive in Phase 4,
   but a simple whole-frame GPU timer is added now.
 
 ### S10. Verification and docs
@@ -172,7 +172,7 @@ prefiltered`, both scaled by material AO.
 
 | Decision | Chosen | Alternatives (who uses them) | Why |
 |---|---|---|---|
-| Shading path | Deferred, compute lighting | Forward+ (Doom 2016, Godot 4, URP Forward+); visibility buffer (Nanite, The Forge) | Many lights at a cost independent of material count, easy screen-space effects next phase; matches Unreal and HDRP defaults. The visibility buffer is revisited with GPU-driven rendering (Phase 5). |
+| Shading path | Deferred, compute lighting | Forward+ (Doom 2016, Godot 4, URP Forward+); visibility buffer (Nanite, The Forge) | Many lights at a cost independent of material count, easy screen-space effects next phase; matches Unreal and HDRP defaults. The visibility buffer is revisited later (Phase 11). |
 | GBuffer layout | 3 targets + emissive into scene color | Unreal: GBufferA–E + velocity; HDRP: 4 targets; thin GBuffers (Call of Duty) | Smallest layout that holds glTF PBR; emissive needs no extra target. |
 | Normal encoding | Octahedral in 10:10 | Spheremap, raw xyz, 16-bit octahedral | Octahedral is uniform and cheap (Cigolle et al. 2014); 10 bits is enough for shading. |
 | Light culling | Clustered (3D froxels) | Tiled 2D (Battlefield 3, Frostbite); per-light volumes (classic deferred) | Clusters handle depth discontinuities and serve the transparent forward pass too. |
@@ -181,7 +181,7 @@ prefiltered`, both scaled by material AO.
 | Local shadows | Atlas with tiles sized by coverage | Per-light textures; cube maps | One resource and one PSO; HDRP and Frostbite use atlases. |
 | Diffuse IBL | SH9 irradiance | Irradiance cube map | 9 coefficients, trivial to sample and to blend later with probes. |
 | Specular IBL | Split-sum prefiltered cube + BRDF LUT | Real-time ray tracing; screen-space reflections only | Industry standard (Karis 2013, Unreal and Unity). |
-| Motion vectors | Deferred to Phase 4 (camera reprojection from depth, plus velocity for moving objects) | Velocity in the GBuffer now | Nothing moves yet; TAA in Phase 4 defines the exact need. |
+| Motion vectors | Deferred to Phase 5 (camera reprojection from depth, plus velocity for moving objects) | Velocity in the GBuffer now | Nothing moves yet; TAA in Phase 5 defines the exact need. |
 | Shadow views | One mesh depth PSO + `viewIndex` root constant | A PSO or constant buffer per view | The same draws serve camera, cascades and atlas tiles; prepares GPU-driven multi-view culling. |
 
 ## Risks
@@ -189,5 +189,5 @@ prefiltered`, both scaled by material AO.
 - **Shadow quality:** bias tuning across cascades. Expose bias sliders in the debug UI from day one.
 - **Light count vs cluster memory:** cap lights per cluster (128) and log overflow.
 - **IBL update cost:** a sun-slider drag recomputes IBL every frame. Rate-limit it to every N frames while dragging.
-- **Unused render-graph aliasing:** shadow maps and GBuffers add about 200 MB. Aliasing in Phase 5 reclaims it;
+- **Unused render-graph aliasing:** shadow maps and GBuffers add about 200 MB. Aliasing in Phase 10 reclaims it;
   until then, watch `Pooled render targets` in the overlay.

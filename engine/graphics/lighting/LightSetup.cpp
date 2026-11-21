@@ -79,6 +79,7 @@ namespace atmos
     {
         const RenderSettings& settings = scene.settings;
         const XMFLOAT3 sunDirection = scene.sky.GetSunDirection();
+        cascadeResolution_ = std::clamp(settings.cascadeResolution, MinCascadeResolution, MaxCascadeResolution);
         const float visibility = SmoothStep(-0.08f, 0.05f, sunDirection.y);
 
         sunDirection_ = sunDirection;
@@ -126,7 +127,7 @@ namespace atmos
             radius = std::ceil(radius * 16.0f) / 16.0f;
 
             // Snap the light-space center to the texel grid.
-            const float texelSize = 2.0f * radius / CascadeResolution;
+            const float texelSize = 2.0f * radius / cascadeResolution_;
             XMFLOAT3 centerLight;
             XMStoreFloat3(&centerLight, XMVector3TransformCoord(center, lightRotation));
             centerLight.x = std::floor(centerLight.x / texelSize) * texelSize;
@@ -197,6 +198,9 @@ namespace atmos
         constexpr float tileScale = static_cast<float>(AtlasTileSize) / AtlasResolution;
         uint32_t nextTile = 0;
 
+        if (casters.size() > scene.settings.maxShadowedLights)
+            casters.resize(scene.settings.maxShadowedLights);
+
         for (uint32_t lightIndex : casters)
         {
             LightGpuData& light = lights_[lightIndex];
@@ -260,13 +264,15 @@ namespace atmos
 
         constants.cascadeCount = std::max(cascadeCount_, 1u);
         constants.cascadeSplits = cascadeSplits_;
-        constants.cascadeTexelSize = { 1.0f / CascadeResolution, 1.0f / CascadeResolution };
+        constants.cascadeTexelSize = { 1.0f / cascadeResolution_, 1.0f / cascadeResolution_ };
         constants.atlasTexelSize = { 1.0f / AtlasResolution, 1.0f / AtlasResolution };
 
         constants.shadowNormalOffset = settings.shadowNormalOffset;
         constants.localShadowsEnabled = localShadowCount_ > 0;
         constants.imageBasedLightingEnabled = settings.imageBasedLighting;
         constants.ambientIntensity = settings.ambientIntensity;
+        constants.reflectionIntensity = settings.reflectionIntensity;
+        constants.shadowFilter = static_cast<uint32_t>(settings.shadowFilter);
         constants.debugView = static_cast<uint32_t>(settings.debugView);
         return constants;
     }

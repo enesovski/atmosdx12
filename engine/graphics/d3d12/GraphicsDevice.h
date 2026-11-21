@@ -7,8 +7,17 @@
 
 #include <dxgi1_6.h>
 
+#include <cstdint>
+#include <string>
+
 namespace atmos
 {
+    struct VideoMemoryInfo
+    {
+        uint64_t usedBytes = 0;
+        uint64_t budgetBytes = 0;  // what the OS currently lets this process use
+    };
+
     // GPU-wide objects: adapter, device, queues, descriptor heaps, bindless root signature.
     class GraphicsDevice
     {
@@ -29,6 +38,9 @@ namespace atmos
         DescriptorHeap& GetDepthStencilHeap() { return depthStencilHeap_; }
 
         DeferredReleaseQueue& GetReleaseQueue() { return releaseQueue_; }
+
+        const std::wstring& GetAdapterName() const { return adapterName_; }
+        VideoMemoryInfo QueryVideoMemory() const;
 
         // Forwards debug-layer messages to the log.
         void LogDebugMessages();
@@ -51,5 +63,6 @@ namespace atmos
         DeferredReleaseQueue releaseQueue_;  // After the heaps: destroyed before them.
         ComPtr<ID3D12RootSignature> bindlessRootSignature_;
         ComPtr<ID3D12InfoQueue> infoQueue_;
+        std::wstring adapterName_;
     };
 }

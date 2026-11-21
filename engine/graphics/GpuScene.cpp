@@ -80,7 +80,8 @@ namespace atmos
                 const Material& material = *instance.materials[submeshes[s].materialIndex];
                 drawData[draws_.size()] = { instance.world, normalMatrix, GetMaterialSlot(material), {} };
 
-                DrawRecord& record = draws_.emplace_back(DrawRecord{ instance.mesh, s, GetBucket(material.data), {} });
+                DrawRecord& record =
+                    draws_.emplace_back(DrawRecord{ instance.mesh, s, GetBucket(material.data), instance.entity, {} });
                 instance.mesh->GetSubmeshBounds(s).Transform(record.worldBounds, world);
             }
         }
@@ -120,6 +121,22 @@ namespace atmos
                 continue;
 
             if (frustum.Intersects(draw.worldBounds))
+                out.buckets[static_cast<size_t>(draw.bucket)].push_back(i);
+        }
+    }
+
+    void GpuScene::CullEntities(const Frustum& frustum, std::span<const uint32_t> sortedEntities, DrawList& out) const
+    {
+        out.Clear();
+
+        if (sortedEntities.empty())
+            return;
+
+        for (uint32_t i = 0; i < draws_.size(); ++i)
+        {
+            const DrawRecord& draw = draws_[i];
+
+            if (std::ranges::binary_search(sortedEntities, draw.entity) && frustum.Intersects(draw.worldBounds))
                 out.buckets[static_cast<size_t>(draw.bucket)].push_back(i);
         }
     }

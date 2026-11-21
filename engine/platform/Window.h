@@ -40,7 +40,14 @@ namespace atmos
 
         // Returns false once WM_QUIT is received.
         bool ProcessMessages(int& exitCode);
-        void Show();
+        void Show(bool maximized = false);
+        void SetTitle(const std::wstring& title);
+
+        // Destroys the window, which ends the message loop (bypasses WM_CLOSE handling).
+        void Close();
+
+        // Pixels per logical pixel of the monitor the window is on (1.0 at 96 DPI).
+        float GetDpiScale() const;
 
         std::optional<WindowSize> ConsumeResize();
 

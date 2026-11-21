@@ -11,13 +11,24 @@
 namespace atmos
 {
     class CommandContext;
+    class GpuProfiler;
     class RenderGraph;
     class TransientResourcePool;
 
+    // What one pass did this frame, for stats and the editor's render-graph view.
     struct RenderPassInfo
     {
         std::wstring name;
         bool culled = false;
+        std::vector<std::string> accesses;  // "Scene Depth (depth-write, clear)"
+        float gpuMilliseconds = 0.0f;       // filled by the renderer from the profiler
+    };
+
+    struct RenderResourceInfo
+    {
+        std::wstring name;
+        std::string description;  // "texture 1280x720x1 R16G16B16A16_FLOAT" / "buffer 13824 B"
+        bool imported = false;
     };
 
     // Typed indices of resources in one frame's graph.
@@ -113,12 +124,14 @@ namespace atmos
             passes_.back().execute = std::forward<Execute>(execute);
         }
 
-        void Execute(CommandContext& commands);
+        // `profiler` (optional) times every live pass.
+        void Execute(CommandContext& commands, GpuProfiler* profiler = nullptr);
 
         void LogSummary() const;
 
         // Valid after Execute().
         std::vector<RenderPassInfo> GetPassInfos() const;
+        std::vector<RenderResourceInfo> GetResourceInfos() const;
 
     private:
         friend class RGBuilder;
@@ -167,8 +180,10 @@ namespace atmos
         void CullPasses();
         void DeriveTransientUsage();
         Resource& Resolve(uint32_t resource);
-        void ExecutePass(Pass& pass, CommandContext& commands);
+        void ExecutePass(Pass& pass, CommandContext& commands, GpuProfiler* profiler);
         const std::wstring& GetName(const Resource& resource) const;
+        std::vector<std::string> DescribeAccesses(const Pass& pass) const;
+        static std::string DescribeResource(const Resource& resource);
 
         static bool Writes(const PassAccess& access);
         static bool OverwritesWholeResource(const PassAccess& access);
