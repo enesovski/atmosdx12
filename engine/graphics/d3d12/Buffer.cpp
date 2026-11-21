@@ -34,6 +34,8 @@ namespace atmos
         const D3D12_RESOURCE_STATES initialState = isUpload ? D3D12_RESOURCE_STATE_GENERIC_READ
                                                             : D3D12_RESOURCE_STATE_COMMON;
 
+        state_ = initialState;
+
         ThrowIfFailed(device.GetNativeDevice()->CreateCommittedResource(
                           &heapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, initialState, nullptr,
                           IID_PPV_ARGS(&resource_)),
@@ -71,6 +73,7 @@ namespace atmos
             resource_ = std::move(other.resource_);
             desc_ = std::move(other.desc_);
             mappedData_ = std::exchange(other.mappedData_, nullptr);
+            state_ = other.state_;
             srv_ = std::exchange(other.srv_, {});
             uav_ = std::exchange(other.uav_, {});
         }

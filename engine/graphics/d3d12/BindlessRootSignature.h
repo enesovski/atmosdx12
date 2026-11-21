@@ -6,8 +6,8 @@
 
 namespace atmos
 {
-    // Root parameters of the engine-wide root signature, mirrored in shaders/Common.hlsli.
-    // Textures and buffers are not bound here: shaders index ResourceDescriptorHeap directly.
+    // Engine-wide root signature, mirrored in shaders/Common.hlsli. Resources are never bound:
+    // shaders index ResourceDescriptorHeap directly.
     enum class RootSlot : uint32_t
     {
         RootConstants = 0,  // b0: small per-pass/per-draw data, e.g. bindless indices

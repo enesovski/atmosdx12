@@ -3,7 +3,7 @@
 ## Modules and dependencies
 
 ```text
-app/ (AtmosDX12.exe)            Application, FlyCameraController, debug panels
+app/ (AtmosDX12.exe)            Application (frame loop), FlyCameraController, DebugPanels
    | links
 engine/ (AtmosEngine.lib)
    ui/                          DebugUi: ImGui Win32 + D3D12 backends, an IOverlayRenderer
@@ -59,12 +59,26 @@ Application
 ## Application frame
 
 ```text
-messages -> resize -> DebugUi::BeginFrame -> camera (unless the UI has input)
+messages -> resize -> DebugUi::BeginFrame -> shortcuts (F1/F5) -> fly camera (RMB held, cursor locked)
 -> AssetManager::Update            integrate finished jobs, record uploads, mark ready, patch material textures
 -> BuildRenderScene(scene, assets) entities x model nodes -> MeshInstances (+ environment)
--> debug panels -> DebugUi::EndFrame
+-> DebugPanels::Draw -> DebugUi::EndFrame
 -> Renderer::Render(renderScene, view, debugUi)
 ```
+
+## Input
+
+- **`Window`** turns Win32 messages into `Input` state:
+  - keys
+  - mouse buttons
+  - wheel steps
+  - raw mouse motion (`WM_INPUT`), which is unaccelerated and unaffected by screen edges or cursor clipping
+- **`Input`** holds held state, plus once-per-press events (`ConsumeKeyPress`, `ConsumeMouseButtonPress`) and
+  accumulated deltas, which the app consumes once per frame. Focus loss resets it.
+- **`FlyCameraController`** (app) starts a flight on a right-button press that is not over the UI, and flies until
+  the button is released. While flying, `Window::SetCursorLocked(true)` hides the cursor and pins it in place.
+- **ImGui** sees every message first through `Window::SetMessageHandler`. `DebugUi::WantsMouse` keeps clicks on UI
+  windows from starting a flight.
 
 ## Asset pipeline
 

@@ -56,10 +56,11 @@ textures pop in as they finish. Later launches load the cooked files from `build
 
 | Input | Action |
 |---|---|
-| Right mouse button + drag | Look around |
-| W / A / S / D | Move |
-| Q / E | Down / up |
-| Shift | Move faster |
+| Hold right mouse button | Fly: mouse look, cursor hidden |
+| RMB + W / A / S / D | Move |
+| RMB + Q / E | Down / up |
+| RMB + Shift | Move faster |
+| RMB + mouse wheel | Change fly speed |
 | Mouse wheel | Field of view |
 | F1 | Show/hide the debug UI (stats, render graph, asset progress, sun and exposure sliders) |
 | F5 | Save the scene, including the current camera as its start view |

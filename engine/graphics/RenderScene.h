@@ -36,8 +36,7 @@ namespace atmos
 
     struct Material;
 
-    // One placed mesh. Mesh and materials are owned elsewhere (asset manager) and must outlive
-    // the frame. Each submesh uses materials[submesh.materialIndex].
+    // Owned by the asset manager. Each submesh uses materials[submesh.materialIndex].
     struct MeshInstance
     {
         const Mesh* mesh = nullptr;
@@ -45,8 +44,7 @@ namespace atmos
         DirectX::XMFLOAT4X4 world{};
     };
 
-    // The renderer-facing description of the world: flat arrays of render proxies, rebuilt
-    // from the gameplay Scene every frame (see runtime/RenderSceneBuilder).
+    // Renderer-facing world description, rebuilt every frame by runtime/RenderSceneBuilder.
     struct RenderScene
     {
         SkyEnvironment sky;

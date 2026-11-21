@@ -9,8 +9,7 @@
 
 namespace atmos
 {
-    // Owns the GPU-wide objects every other graphics class builds on: adapter, device,
-    // graphics and copy queues, descriptor heaps and the bindless root signature.
+    // GPU-wide objects: adapter, device, queues, descriptor heaps, bindless root signature.
     class GraphicsDevice
     {
     public:
@@ -29,13 +28,12 @@ namespace atmos
         DescriptorHeap& GetRenderTargetHeap() { return renderTargetHeap_; }
         DescriptorHeap& GetDepthStencilHeap() { return depthStencilHeap_; }
 
-        // Destroyed Textures/Buffers park their resource and descriptors here until the GPU is done.
         DeferredReleaseQueue& GetReleaseQueue() { return releaseQueue_; }
 
-        // Forwards queued debug-layer messages to the log. No-op without the debug layer.
+        // Forwards debug-layer messages to the log.
         void LogDebugMessages();
 
-        // Logs the removal reason plus DRED breadcrumbs and page-fault data if enabled.
+        // Logs the removal reason and DRED data.
         void LogDeviceRemovedInfo();
 
     private:

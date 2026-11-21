@@ -103,6 +103,10 @@ namespace atmos
 
             if (options.ResourceBindingTier < D3D12_RESOURCE_BINDING_TIER_3)
                 throw std::runtime_error("GPU does not support resource binding tier 3");
+
+            // Lighting adds into the HDR scene color through a typed UAV (load + store).
+            if (!options.TypedUAVLoadAdditionalFormats)
+                throw std::runtime_error("GPU does not support typed UAV loads");
         }
 
         ComPtr<ID3D12Device> CreateDevice(IDXGIAdapter1* adapter)

@@ -24,10 +24,8 @@ namespace atmos
         uint64_t slicePitch = 0;  // bytes for the whole subresource
     };
 
-    // Asynchronous uploads into GPU-only resources on the dedicated copy queue.
-    // Data is copied into staging memory when recorded; Submit() executes everything recorded
-    // since the last submit and returns a fence value. A resource may be used for rendering only
-    // once IsComplete(value) is true. Destinations stay in COMMON (copy-queue promotion/decay).
+    // Asynchronous uploads on the copy queue. A resource may be used once IsComplete(Submit())
+    // is true. Destinations stay in COMMON.
     class UploadQueue
     {
     public:
@@ -44,7 +42,7 @@ namespace atmos
         uint64_t Submit();
         bool IsComplete(uint64_t fenceValue) const;
 
-        // Recycles allocators and frees staging memory of finished batches.
+        // Frees staging memory of finished batches.
         void ReleaseCompleted();
         void WaitIdle();
 

@@ -17,8 +17,7 @@ namespace atmos
         DirectX::XMFLOAT4X4 transform{};
     };
 
-    // Everything an imported model contains, CPU-side and in engine space.
-    // Submesh::materialIndex refers into `materials`.
+    // An imported model in engine space; Submesh::materialIndex refers into `materials`.
     struct ModelData
     {
         std::vector<MeshData> meshes;

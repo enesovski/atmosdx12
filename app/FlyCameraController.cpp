@@ -5,6 +5,9 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <cmath>
+
 using namespace DirectX;
 
 namespace
@@ -15,12 +18,36 @@ namespace
     }
 }
 
-void FlyCameraController::Update(atmos::Camera& camera, atmos::Input& input, float deltaSeconds) const
+bool FlyCameraController::Update(atmos::Camera& camera, atmos::Input& input, float deltaSeconds, bool pointerOverUi)
 {
-    const atmos::MouseDelta look = input.ConsumeLookDelta();
-    camera.Rotate(look.x * lookSensitivity_, -look.y * lookSensitivity_);
-    camera.AdjustFov(-input.ConsumeWheelSteps() * zoomSensitivity_);
+    using atmos::MouseButton;
 
+    // A flight starts with a right-button press in the viewport and lasts while the button is held.
+    if (input.ConsumeMouseButtonPress(MouseButton::Right) && !pointerOverUi)
+        flying_ = true;
+
+    if (!input.IsMouseButtonDown(MouseButton::Right))
+        flying_ = false;
+
+    const atmos::MouseDelta look = input.ConsumeMouseDelta();
+    const float wheelSteps = input.ConsumeWheelSteps();
+
+    if (!flying_)
+    {
+        if (!pointerOverUi)
+            camera.AdjustFov(-wheelSteps * zoomSensitivity_);
+
+        return false;
+    }
+
+    camera.Rotate(look.x * lookSensitivity_, -look.y * lookSensitivity_);
+    moveSpeed_ = std::clamp(moveSpeed_ * std::pow(1.25f, wheelSteps), 0.25f, 200.0f);
+    Move(camera, input, deltaSeconds);
+    return true;
+}
+
+void FlyCameraController::Move(atmos::Camera& camera, const atmos::Input& input, float deltaSeconds) const
+{
     const XMFLOAT3 forward = camera.GetForward();
     const XMFLOAT3 right = camera.GetRight();
 

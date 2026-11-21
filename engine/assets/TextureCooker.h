@@ -14,9 +14,8 @@ namespace atmos
         NormalMap,  // tangent-space XY, BC5 (Z rebuilt in the shader)
     };
 
-    // Returns the GPU-ready (mipmapped, block-compressed) texture for an image file.
-    // The first call cooks it into `cacheDirectory` as DDS; later calls load that file as long
-    // as it is newer than the source. Thread-safe: may run on any worker thread. Throws on failure.
+    // Reads the cooked (mipmapped, block-compressed) DDS, cooking it first when missing or stale.
+    // Thread-safe. Throws on failure.
     TextureData LoadCookedTexture(const std::filesystem::path& source, TextureKind kind,
                                   const std::filesystem::path& cacheDirectory);
 }

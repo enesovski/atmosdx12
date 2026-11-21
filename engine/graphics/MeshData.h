@@ -26,8 +26,7 @@ namespace atmos
         uint32_t materialIndex = 0;  // Into the owning model's material list.
     };
 
-    // CPU-side geometry in engine space (left-handed, +Y up, clockwise front faces).
-    // Loaders and procedural generators produce it; the asset manager uploads it.
+    // CPU geometry in engine space (left-handed, +Y up, clockwise front faces).
     struct MeshData
     {
         std::string name;

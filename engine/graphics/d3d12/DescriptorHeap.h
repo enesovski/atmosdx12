@@ -8,8 +8,7 @@
 
 namespace atmos
 {
-    // One slot in a DescriptorHeap. For shader-visible heaps, `index` is the bindless
-    // index shaders use with ResourceDescriptorHeap[index].
+    // For shader-visible heaps, `index` is the bindless index (ResourceDescriptorHeap[index]).
     struct Descriptor
     {
         static constexpr uint32_t InvalidIndex = UINT32_MAX;
@@ -33,7 +32,7 @@ namespace atmos
 
         Descriptor Allocate();
 
-        // The GPU must no longer reference the descriptor. Resets it to invalid.
+        // The GPU must no longer use it.
         void Free(Descriptor& descriptor);
 
         ID3D12DescriptorHeap* GetHeap() const { return heap_.Get(); }

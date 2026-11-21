@@ -10,9 +10,8 @@
 
 namespace atmos
 {
-    // Fixed set of worker threads running queued jobs in FIFO order. Jobs must not throw;
-    // wrap fallible work and report the error through the job's own result.
-    // Destruction stops the workers: running jobs finish, queued jobs are dropped.
+    // Fixed worker threads running FIFO jobs. Jobs must not throw; queued jobs are dropped on
+    // destruction.
     class ThreadPool
     {
     public:
@@ -24,7 +23,6 @@ namespace atmos
 
         void Submit(std::function<void()> job);
 
-        // Queued plus running jobs.
         size_t GetPendingCount() const;
 
     private:

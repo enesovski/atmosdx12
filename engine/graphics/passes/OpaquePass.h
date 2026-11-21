@@ -10,10 +10,8 @@ namespace atmos
     class ShaderCompiler;
     struct SkyEnvironment;
 
-    // Shades visible meshes into scene color: material textures, normal mapping and a temporary
-    // lambert + sun model. Depth comes from DepthPrepass and is tested with EQUAL, so masked
-    // materials need no alpha test here and nothing is shaded twice.
-    // Replaced by the deferred GBuffer + lighting passes in Phase 3.
+    // Temporary forward shading (textures, normal maps, lambert sun) with EQUAL depth, so nothing
+    // is shaded twice. Replaced by deferred lighting in Phase 3.
     class OpaquePass
     {
     public:

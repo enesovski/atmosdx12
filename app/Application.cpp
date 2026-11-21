@@ -10,8 +10,6 @@
 #include "scene/SceneSerializer.h"
 #include "ui/DebugUi.h"
 
-#include <imgui.h>
-
 namespace
 {
     const atmos::WindowDesc MainWindow{ L"AtmosDX12", 1280, 720 };
@@ -47,7 +45,8 @@ Application::Application(HINSTANCE instance, const AppOptions& options)
                                                   options.device))
 {
     assets_ = std::make_unique<atmos::AssetManager>(
-        renderer_->GetDevice(), atmos::AssetManager::Options{ .cacheDirectory = atmos::GetExecutableDirectory() / "AssetCache" });
+        renderer_->GetDevice(),
+        atmos::AssetManager::Options{ .cacheDirectory = atmos::GetExecutableDirectory() / "AssetCache" });
 
     debugUi_ = std::make_unique<atmos::DebugUi>(window_.GetHandle(), renderer_->GetDevice());
     window_.SetMessageHandler([this](HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -81,30 +80,9 @@ int Application::Run()
         if (const auto size = window_.ConsumeResize())
             renderer_->Resize(size->width, size->height);
 
-        const float deltaSeconds = frameTimer_.Tick();
+        Tick(frameTimer_.Tick());
 
-        if (input_.ConsumeKeyPress(VK_F1))
-            showDebugUi_ = !showDebugUi_;
-
-        if (input_.ConsumeKeyPress(VK_F5))
-            SaveScene();
-
-        debugUi_->BeginFrame();
-        UpdateCamera(deltaSeconds);
-
-        assets_->Update();
-        atmos::BuildRenderScene(scene_, *assets_, renderScene_);
-
-        if (showDebugUi_)
-            DrawDebugWindows(deltaSeconds);
-
-        debugUi_->EndFrame();
-
-        const atmos::WindowSize size = window_.GetClientSize();
-        renderer_->Render(renderScene_, atmos::RenderView::FromCamera(camera_, size.width, size.height),
-                          showDebugUi_ ? debugUi_.get() : nullptr);
-
-        // Show after the first frame so the window never flashes uninitialized content.
+        // Shown after the first frame so the window never flashes uninitialized content.
         if (!windowShown_)
         {
             window_.Show();
@@ -113,6 +91,64 @@ int Application::Run()
     }
 
     return exitCode;
+}
+
+void Application::Tick(float deltaSeconds)
+{
+    debugUi_->BeginFrame();
+
+    HandleShortcuts();
+    UpdateCamera(deltaSeconds);
+
+    assets_->Update();
+    atmos::BuildRenderScene(scene_, *assets_, renderScene_);
+
+    DrawUi(deltaSeconds);
+    debugUi_->EndFrame();
+
+    Render();
+}
+
+void Application::HandleShortcuts()
+{
+    if (input_.ConsumeKeyPress(VK_F1))
+        showDebugUi_ = !showDebugUi_;
+
+    if (input_.ConsumeKeyPress(VK_F5))
+        SaveScene();
+}
+
+void Application::UpdateCamera(float deltaSeconds)
+{
+    const bool pointerOverUi = showDebugUi_ && debugUi_->WantsMouse() && !cameraController_.IsFlying();
+    const bool flying = cameraController_.Update(camera_, input_, deltaSeconds, pointerOverUi);
+    window_.SetCursorLocked(flying);
+}
+
+void Application::DrawUi(float deltaSeconds)
+{
+    if (!showDebugUi_)
+        return;
+
+    const bool saveRequested = debugPanels_.Draw({
+        .deltaSeconds = deltaSeconds,
+        .camera = camera_,
+        .cameraMoveSpeed = cameraController_.GetMoveSpeed(),
+        .environment = scene_.environment,
+        .renderStats = renderer_->GetFrameStats(),
+        .assetStats = assets_->GetStats(),
+        .canSaveScene = !scenePath_.empty(),
+    });
+
+    if (saveRequested)
+        SaveScene();
+}
+
+void Application::Render()
+{
+    const atmos::WindowSize size = window_.GetClientSize();
+    renderer_->Render(renderScene_, atmos::RenderView::FromCamera(camera_, size.width, size.height),
+                      showDebugUi_ ? debugUi_.get() : nullptr);
 }
 
 void Application::LoadScene(const std::filesystem::path& path)
@@ -138,7 +174,7 @@ void Application::LoadScene(const std::filesystem::path& path)
     atmos::log::Info("Scene: {} ({} entities)", atmos::ToUtf8(path.filename().wstring()), scene_.GetEntities().size());
 }
 
-// Writes the scene back to its file, including the current camera as the start view.
+// Writes the scene back to its file, with the current camera as the start view.
 void Application::SaveScene()
 {
     if (scenePath_.empty())
@@ -158,76 +194,4 @@ void Application::SaveScene()
     {
         atmos::log::Error("{}", e.what());
     }
-}
-
-void Application::UpdateCamera(float deltaSeconds)
-{
-    // While the UI owns the mouse or keyboard, drop camera input instead of letting it build up.
-    if (showDebugUi_ && (debugUi_->WantsMouse() || debugUi_->WantsKeyboard()))
-    {
-        input_.ConsumeLookDelta();
-        input_.ConsumeWheelSteps();
-        return;
-    }
-
-    cameraController_.Update(camera_, input_, deltaSeconds);
-}
-
-void Application::DrawDebugWindows(float deltaSeconds)
-{
-    smoothedFrameMs_ += (deltaSeconds * 1000.0f - smoothedFrameMs_) * 0.05f;
-
-    ImGui::SetNextWindowPos({ 10, 10 }, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize({ 330, 0 }, ImGuiCond_FirstUseEver);
-    ImGui::Begin("AtmosDX12  (F1 hides)");
-
-    ImGui::Text("%.2f ms  (%.0f FPS)", smoothedFrameMs_, smoothedFrameMs_ > 0.0f ? 1000.0f / smoothedFrameMs_ : 0.0f);
-    const DirectX::XMFLOAT3& position = camera_.GetPosition();
-    ImGui::Text("Camera %.1f, %.1f, %.1f", position.x, position.y, position.z);
-
-    if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        atmos::SceneEnvironment& environment = scene_.environment;
-        ImGui::SliderFloat("Sun azimuth", &environment.sunAzimuthDegrees, 0.0f, 360.0f, "%.0f deg");
-        ImGui::SliderFloat("Sun elevation", &environment.sunElevationDegrees, -10.0f, 90.0f, "%.1f deg");
-        ImGui::SliderFloat("Sun intensity", &environment.sunIntensity, 0.0f, 10.0f);
-        ImGui::SliderFloat("Exposure", &environment.exposure, 0.1f, 5.0f);
-
-        ImGui::BeginDisabled(scenePath_.empty());
-        if (ImGui::Button("Save scene (F5)"))
-            SaveScene();
-        ImGui::EndDisabled();
-    }
-
-    if (ImGui::CollapsingHeader("Render graph", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        const atmos::RenderFrameStats& stats = renderer_->GetFrameStats();
-
-        for (const atmos::RenderPassInfo& pass : stats.passes)
-        {
-            ImGui::TextColored(pass.culled ? ImVec4(0.6f, 0.6f, 0.6f, 1.0f) : ImVec4(0.5f, 1.0f, 0.5f, 1.0f),
-                               "%s  %s", pass.culled ? "culled" : "live  ", atmos::ToUtf8(pass.name).c_str());
-        }
-
-        ImGui::Separator();
-        ImGui::Text("Instances %u  (culled %u)", stats.scene.instances, stats.scene.culledInstances);
-        ImGui::Text("Draws %u   Materials %u", stats.scene.draws, stats.scene.materials);
-        ImGui::Text("Pooled render targets %zu", stats.pooledTextures);
-    }
-
-    if (ImGui::CollapsingHeader("Assets", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        const atmos::AssetStats stats = assets_->GetStats();
-        const uint32_t textureTotal = stats.texturesReady + stats.texturesLoading + stats.texturesFailed;
-
-        ImGui::Text("Models   %u ready, %u loading, %u failed", stats.modelsReady, stats.modelsLoading, stats.modelsFailed);
-        ImGui::Text("Textures %u ready, %u loading, %u failed", stats.texturesReady, stats.texturesLoading, stats.texturesFailed);
-
-        if (textureTotal > 0)
-        {
-            ImGui::ProgressBar(static_cast<float>(stats.texturesReady + stats.texturesFailed) / textureTotal);
-        }
-    }
-
-    ImGui::End();
 }

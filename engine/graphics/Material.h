@@ -21,9 +21,7 @@ namespace atmos
 
     static_assert(sizeof(MaterialGpuData) == 64);
 
-    // A renderable material: its parameters plus the bindless texture indices to sample.
-    // Slots always hold a valid index; the asset manager points them at fallback textures
-    // until the real ones are resident.
+    // Parameters plus bindless texture indices (fallbacks until textures are resident).
     struct Material
     {
         MaterialData data;

@@ -13,9 +13,7 @@ namespace atmos
         D3D12_GPU_VIRTUAL_ADDRESS gpuAddress = 0;
     };
 
-    // Linear allocator for per-frame CPU-to-GPU data (constants, dynamic buffers).
-    // One persistently mapped upload buffer is split into a region per frame slot; a
-    // region is reset only after FrameScheduler waited on that slot's fence.
+    // Per-frame linear upload memory; one region per frame slot, reset after its fence.
     class UploadAllocator
     {
     public:

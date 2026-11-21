@@ -61,6 +61,36 @@ namespace atmos
         texture.state_ = newState;
     }
 
+    void CommandContext::Transition(Buffer& buffer, D3D12_RESOURCE_STATES newState)
+    {
+        if (buffer.state_ == newState)
+            return;
+
+        D3D12_RESOURCE_BARRIER barrier{};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.pResource = buffer.GetResource();
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        barrier.Transition.StateBefore = buffer.state_;
+        barrier.Transition.StateAfter = newState;
+
+        pendingBarriers_.push_back(barrier);
+        buffer.state_ = newState;
+    }
+
+    void CommandContext::MarkDecayedToCommon(Buffer& buffer)
+    {
+        if (buffer.GetDesc().memory == BufferMemory::GpuOnly)
+            buffer.state_ = D3D12_RESOURCE_STATE_COMMON;
+    }
+
+    void CommandContext::UavBarrier(ID3D12Resource* resource)
+    {
+        D3D12_RESOURCE_BARRIER barrier{};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+        barrier.UAV.pResource = resource;
+        pendingBarriers_.push_back(barrier);
+    }
+
     void CommandContext::FlushBarriers()
     {
         if (pendingBarriers_.empty())
@@ -70,7 +100,8 @@ namespace atmos
         pendingBarriers_.clear();
     }
 
-    void CommandContext::SetRenderTargets(std::span<Texture* const> colors, Texture* depth, bool readOnlyDepth)
+    void CommandContext::SetRenderTargets(std::span<Texture* const> colors, Texture* depth, bool readOnlyDepth,
+                                          uint32_t depthSlice)
     {
         ATMOS_ASSERT(!colors.empty() || depth, "No render targets given");
         ATMOS_ASSERT(colors.size() <= D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT, "Too many render targets");
@@ -92,16 +123,21 @@ namespace atmos
             else if (!(depth->GetState() & D3D12_RESOURCE_STATE_DEPTH_READ))  // Keep e.g. DEPTH_READ | SRV.
                 Transition(*depth, D3D12_RESOURCE_STATE_DEPTH_READ);
 
-            dsv = depth->GetDsv(readOnlyDepth);
+            dsv = depth->GetDsv(depthSlice, readOnlyDepth);
         }
 
         commandList_->OMSetRenderTargets(static_cast<UINT>(colors.size()), rtvs, FALSE, depth ? &dsv : nullptr);
 
         const Texture& sizeSource = colors.empty() ? *depth : *colors[0];
-        const D3D12_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(sizeSource.GetWidth()),
-                                       static_cast<float>(sizeSource.GetHeight()), 0.0f, 1.0f };
-        const D3D12_RECT scissor{ 0, 0, static_cast<LONG>(sizeSource.GetWidth()),
-                                  static_cast<LONG>(sizeSource.GetHeight()) };
+        SetViewport(0, 0, sizeSource.GetWidth(), sizeSource.GetHeight());
+    }
+
+    void CommandContext::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+    {
+        const D3D12_VIEWPORT viewport{ static_cast<float>(x), static_cast<float>(y), static_cast<float>(width),
+                                       static_cast<float>(height), 0.0f, 1.0f };
+        const D3D12_RECT scissor{ static_cast<LONG>(x), static_cast<LONG>(y), static_cast<LONG>(x + width),
+                                  static_cast<LONG>(y + height) };
 
         commandList_->RSSetViewports(1, &viewport);
         commandList_->RSSetScissorRects(1, &scissor);
@@ -134,12 +170,12 @@ namespace atmos
         commandList_->ClearRenderTargetView(color.GetRtv(), color.GetDesc().clearColor.data(), 0, nullptr);
     }
 
-    void CommandContext::ClearDepth(Texture& depth)
+    void CommandContext::ClearDepth(Texture& depth, uint32_t slice)
     {
         Transition(depth, D3D12_RESOURCE_STATE_DEPTH_WRITE);
         FlushBarriers();
-        commandList_->ClearDepthStencilView(depth.GetDsv(), D3D12_CLEAR_FLAG_DEPTH,
-                                            depth.GetDesc().clearDepth, 0, 0, nullptr);
+        commandList_->ClearDepthStencilView(depth.GetDsv(slice), D3D12_CLEAR_FLAG_DEPTH, depth.GetDesc().clearDepth, 0, 0,
+                                            nullptr);
     }
 
     void CommandContext::SetPipeline(const PipelineState& pipeline)

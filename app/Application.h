@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DebugPanels.h"
 #include "FlyCameraController.h"
 
 #include "core/FrameTimer.h"
@@ -24,7 +25,7 @@ struct AppOptions
 {
     atmos::GraphicsDeviceOptions device;
     std::filesystem::path scenePath;  // .json scene or a single .gltf/.glb; empty: scenes/sponza.json
-    bool dumpFrame = false;           // Log the first frame's render graph.
+    bool dumpFrame = false;
 };
 
 class Application
@@ -39,16 +40,21 @@ public:
     int Run();
 
 private:
+    void Tick(float deltaSeconds);
+    void HandleShortcuts();
+    void UpdateCamera(float deltaSeconds);
+    void DrawUi(float deltaSeconds);
+    void Render();
+
     void LoadScene(const std::filesystem::path& path);
     void SaveScene();
-    void UpdateCamera(float deltaSeconds);
-    void DrawDebugWindows(float deltaSeconds);
 
     atmos::Input input_;
     atmos::Window window_;
     atmos::Camera camera_;
     FlyCameraController cameraController_;
     atmos::FrameTimer frameTimer_;
+    DebugPanels debugPanels_;
 
     atmos::Scene scene_;
     std::filesystem::path scenePath_;  // where F5 saves; empty for a directly loaded model
@@ -61,5 +67,4 @@ private:
 
     bool showDebugUi_ = true;
     bool windowShown_ = false;
-    float smoothedFrameMs_ = 0.0f;
 };

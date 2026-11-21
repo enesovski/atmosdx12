@@ -34,6 +34,19 @@ namespace atmos
         }
     }
 
+    namespace
+    {
+        // Hardware 2x2 PCF; reverse-Z, so a sample is lit when its depth is at least the stored depth.
+        D3D12_STATIC_SAMPLER_DESC MakeShadowSampler(uint32_t shaderRegister)
+        {
+            D3D12_STATIC_SAMPLER_DESC sampler = MakeStaticSampler(shaderRegister, D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT,
+                                                                  D3D12_TEXTURE_ADDRESS_MODE_BORDER);
+            sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_GREATER_EQUAL;
+            sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK;
+            return sampler;
+        }
+    }
+
     ComPtr<ID3D12RootSignature> CreateBindlessRootSignature(ID3D12Device* device)
     {
         std::array<D3D12_ROOT_PARAMETER1, 3> parameters{};
@@ -47,12 +60,13 @@ namespace atmos
         parameters[static_cast<size_t>(RootSlot::ViewConstants)] = MakeRootCbv(1);
         parameters[static_cast<size_t>(RootSlot::PassConstants)] = MakeRootCbv(2);
 
-        // Registers s0-s3 match the sampler declarations in Common.hlsli.
+        // Registers s0-s4 match the sampler declarations in Common.hlsli.
         const std::array samplers = {
             MakeStaticSampler(0, D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_TEXTURE_ADDRESS_MODE_CLAMP),
             MakeStaticSampler(1, D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_TEXTURE_ADDRESS_MODE_CLAMP),
             MakeStaticSampler(2, D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_TEXTURE_ADDRESS_MODE_WRAP),
             MakeStaticSampler(3, D3D12_FILTER_ANISOTROPIC, D3D12_TEXTURE_ADDRESS_MODE_WRAP),
+            MakeShadowSampler(4),
         };
 
         D3D12_VERSIONED_ROOT_SIGNATURE_DESC desc{};

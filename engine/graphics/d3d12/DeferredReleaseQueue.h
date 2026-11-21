@@ -8,9 +8,7 @@
 
 namespace atmos
 {
-    // Keeps destroyed GPU objects alive until the GPU can no longer use them.
-    // Everything released is tagged with the frame fence value that will be signaled at the
-    // end of the current frame; FrameScheduler frees entries once that value completes.
+    // Keeps released GPU objects alive until the frame fence passes their release frame.
     class DeferredReleaseQueue
     {
     public:
@@ -21,11 +19,10 @@ namespace atmos
         void Release(ComPtr<ID3D12Resource> resource);
         void Release(DescriptorHeap& heap, Descriptor& descriptor);  // Resets `descriptor`.
 
-        // Driven by FrameScheduler.
         void SetPendingFenceValue(uint64_t value) { pendingFenceValue_ = value; }
         void ReleaseCompleted(uint64_t completedFenceValue);
 
-        // Only when the GPU is idle (e.g. right before a swap-chain resize).
+        // Only when the GPU is idle.
         void ReleaseAll();
 
     private:

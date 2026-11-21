@@ -21,7 +21,7 @@ namespace atmos
 {
     class GraphicsDevice;
 
-    // A model whose GPU data is resident and ready to draw.
+    // GPU-resident model, ready to draw.
     struct LoadedModel
     {
         std::vector<std::unique_ptr<Mesh>> meshes;      // nullptr for meshes without geometry
@@ -40,12 +40,8 @@ namespace atmos
         uint32_t texturesFailed = 0;
     };
 
-    // Owns every loaded model and texture behind handles.
-    //  - Worker threads do the CPU work: import/cook models, decode/compress/cook textures.
-    //  - Update() (main thread, once per frame) creates GPU resources for finished jobs, records
-    //    their uploads on the copy queue and marks assets ready once the copies completed.
-    //  - Until then, materials sample fallback textures, and GetModel() returns nullptr.
-    //    Models that fail to load are replaced by a magenta error cube.
+    // Loads models and textures behind handles. Workers cook on the CPU; Update() (main thread)
+    // creates GPU resources, uploads them on the copy queue and marks them ready.
     class AssetManager
     {
     public:
@@ -61,7 +57,7 @@ namespace atmos
         AssetManager(const AssetManager&) = delete;
         AssetManager& operator=(const AssetManager&) = delete;
 
-        // Starts loading (once per path) and returns immediately.
+        // Asynchronous; deduplicated by path.
         ModelHandle LoadModel(const std::filesystem::path& path);
 
         void Update();
@@ -134,7 +130,7 @@ namespace atmos
         std::mutex completedMutex_;
         std::vector<CompletedJob> completed_;
 
-        // Last member: destroyed first, so no worker outlives the state it writes to.
+        // Last member: workers are joined before the state they write is destroyed.
         ThreadPool workers_;
     };
 }

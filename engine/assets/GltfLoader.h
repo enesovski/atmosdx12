@@ -6,9 +6,7 @@
 
 namespace atmos
 {
-    // Imports a .gltf/.glb file into engine space. glTF is right-handed with counter-clockwise
-    // front faces; the loader mirrors Z (positions, normals, tangents, node matrices) and
-    // reverses triangle winding. Materials keep absolute texture paths; textures embedded
-    // in .glb buffers are not supported yet. Missing tangents are generated. Throws on failure.
+    // Imports into engine space: mirrors Z, negates tangent W, reverses winding, generates missing
+    // tangents. Embedded (data URI/.glb) images are not supported yet. Throws on failure.
     ModelData ImportGltfModel(const std::filesystem::path& path);
 }

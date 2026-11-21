@@ -16,8 +16,7 @@ namespace atmos
     class Texture;
     class UploadAllocator;
 
-    // Records one frame's GPU commands. Tracks texture states, batches barriers until the
-    // next draw/dispatch/clear, and binds root arguments for whichever pipeline is bound.
+    // Records a frame: tracks texture states, batches barriers, binds root arguments.
     class CommandContext
     {
     public:
@@ -26,21 +25,29 @@ namespace atmos
         CommandContext(const CommandContext&) = delete;
         CommandContext& operator=(const CommandContext&) = delete;
 
-        // Binds the descriptor heap and bindless root signature to an opened command list.
+        // Binds the descriptor heap, then the root signature.
         void Begin(ID3D12GraphicsCommandList* commandList);
         void End();
 
         ID3D12GraphicsCommandList* GetNativeCommandList() const { return commandList_; }
 
         void Transition(Texture& texture, D3D12_RESOURCE_STATES newState);
+        void Transition(Buffer& buffer, D3D12_RESOURCE_STATES newState);
+        void UavBarrier(ID3D12Resource* resource);
         void FlushBarriers();
 
-        // Transitions the targets and sets viewport/scissor to the first target's size.
-        // A read-only depth target is bound for testing only (DEPTH_READ + read-only DSV).
-        void SetRenderTargets(std::span<Texture* const> colors, Texture* depth, bool readOnlyDepth = false);
+        // Buffers decay to COMMON after every submit; call before a buffer's first use in a frame.
+        void MarkDecayedToCommon(Buffer& buffer);
+
+        // Transitions targets and sets the viewport. Read-only depth stays in DEPTH_READ.
+        void SetRenderTargets(std::span<Texture* const> colors, Texture* depth, bool readOnlyDepth = false,
+                              uint32_t depthSlice = 0);
         void SetRenderTarget(Texture& color, Texture* depth = nullptr);
         void ClearRenderTarget(Texture& color);
-        void ClearDepth(Texture& depth);
+        void ClearDepth(Texture& depth, uint32_t slice = 0);
+
+        // Viewport and scissor in pixels, e.g. one tile of a shadow atlas.
+        void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 
         // Bind the pipeline before its root arguments; they follow its type.
         void SetPipeline(const PipelineState& pipeline);
@@ -62,7 +69,7 @@ namespace atmos
             SetConstantBuffer(slot, UploadConstants(&data, sizeof(T)));
         }
 
-        // Binds for graphics and compute alike; for frame/view data shared by all passes.
+        // Binds for graphics and compute (per-view data).
         template <typename T>
         void SetGlobalConstantBuffer(RootSlot slot, const T& data)
         {

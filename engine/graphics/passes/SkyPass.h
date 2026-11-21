@@ -9,8 +9,7 @@ namespace atmos
     class ShaderCompiler;
     struct SkyEnvironment;
 
-    // Fullscreen procedural sky with sun disk and glow. Drawn after opaque geometry on the
-    // reverse-Z far plane, so the depth test leaves only pixels no geometry covered.
+    // Procedural sky on the far plane, drawn only where no geometry wrote depth.
     class SkyPass
     {
     public:

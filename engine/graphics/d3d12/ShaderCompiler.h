@@ -16,14 +16,13 @@ namespace atmos
         Compute,
     };
 
-    // DXC front end targeting Shader Model 6.6. Matrices are packed row-major (-Zpr),
-    // so HLSL uses mul(vector, matrix) exactly like DirectXMath.
+    // DXC, Shader Model 6.6, row-major matrices (-Zpr) to match DirectXMath.
     class ShaderCompiler
     {
     public:
         explicit ShaderCompiler(std::filesystem::path shaderDirectory);
 
-        // `fileName` is relative to the shader directory, which is also the include root.
+        // `fileName` is relative to the shader directory (also the include root).
         ComPtr<IDxcBlob> Compile(std::wstring_view fileName, std::wstring_view entryPoint,
                                  ShaderStage stage) const;
 

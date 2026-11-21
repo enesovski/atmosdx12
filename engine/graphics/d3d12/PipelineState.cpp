@@ -56,11 +56,15 @@ namespace atmos
             return desc;
         }
 
-        D3D12_RASTERIZER_DESC MakeRasterizerDesc(CullMode mode)
+        D3D12_RASTERIZER_DESC MakeRasterizerDesc(const GraphicsPipelineDesc& pipeline)
         {
+            const CullMode mode = pipeline.cullMode;
+
             D3D12_RASTERIZER_DESC desc{};
             desc.FillMode = D3D12_FILL_MODE_SOLID;
-            desc.DepthClipEnable = TRUE;
+            desc.DepthClipEnable = pipeline.depthClip;
+            desc.DepthBias = pipeline.depthBias;
+            desc.SlopeScaledDepthBias = pipeline.slopeScaledDepthBias;
 
             switch (mode)
             {
@@ -111,7 +115,7 @@ namespace atmos
         nativeDesc.PS = ToBytecode(desc.pixelShader);
         nativeDesc.BlendState = MakeBlendDesc(desc.blendMode);
         nativeDesc.SampleMask = std::numeric_limits<UINT>::max();
-        nativeDesc.RasterizerState = MakeRasterizerDesc(desc.cullMode);
+        nativeDesc.RasterizerState = MakeRasterizerDesc(desc);
         nativeDesc.DepthStencilState = MakeDepthStencilDesc(desc.depthMode, desc.depthFunc);
         nativeDesc.PrimitiveTopologyType = desc.topology;
         nativeDesc.NumRenderTargets = static_cast<UINT>(desc.renderTargetFormats.size());

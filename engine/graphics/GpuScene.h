@@ -41,7 +41,7 @@ namespace atmos
         uint32_t attributeBufferIndex;
     };
 
-    // Draws grouped by the pipeline state they need. Mask covers Blend until a transparent pass exists.
+    // Draws grouped by pipeline. Blend renders as Mask until the transparent pass exists.
     enum class DrawBucket : uint32_t
     {
         Opaque,
@@ -66,9 +66,8 @@ namespace atmos
         uint32_t materials = 0;
     };
 
-    // The renderer's per-frame view of the scene: frustum-culls mesh instances, writes their
-    // DrawData and the materials they use into this frame slot's upload buffers, and keeps the
-    // visible draws grouped by bucket. Mesh passes draw a bucket with RecordDraws().
+    // Per-frame culled draw list: writes DrawData and materials into the frame slot's buffers
+    // and groups draws by bucket.
     class GpuScene
     {
     public:
@@ -77,10 +76,10 @@ namespace atmos
 
         explicit GpuScene(GraphicsDevice& device);
 
-        // frameIndex is the FrameScheduler slot; its fence protects the buffers being written.
+        // frameIndex: the FrameScheduler slot whose fence guards the written buffers.
         void Update(uint32_t frameIndex, const RenderScene& scene, const Frustum& frustum);
 
-        // Binds per-draw root constants and index buffers, then draws. The caller sets the pipeline.
+        // The caller sets the pipeline.
         void RecordDraws(CommandContext& commands, DrawBucket bucket) const;
 
         bool HasDraws(DrawBucket bucket) const { return !buckets_[static_cast<size_t>(bucket)].empty(); }

@@ -30,8 +30,7 @@ namespace atmos
         size_t pooledTextures = 0;
     };
 
-    // The engine's rendering entry point. Owns the GPU objects, runs the frame loop and
-    // builds a render graph every frame; passes describe their work, the graph schedules it.
+    // Owns the GPU frame loop and builds the render graph every frame.
     class Renderer
     {
     public:
@@ -46,16 +45,13 @@ namespace atmos
         // `overlay` (optional) is drawn last, on top of the tonemapped image.
         void Render(const RenderScene& scene, const RenderView& view, IOverlayRenderer* overlay = nullptr);
 
-        // Blocks until the GPU has finished all submitted frames.
         void WaitIdle();
 
-        // For systems that create GPU resources (asset manager, debug UI).
         GraphicsDevice& GetDevice() { return device_; }
 
-        // Statistics of the most recently rendered frame.
         const RenderFrameStats& GetFrameStats() const { return frameStats_; }
 
-        // Logs the next frame's render graph and culling statistics.
+        // Logs the next frame's graph and statistics.
         void RequestFrameDump() { dumpNextFrame_ = true; }
 
     private:

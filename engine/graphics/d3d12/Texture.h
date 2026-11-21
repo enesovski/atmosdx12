@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace atmos
 {
@@ -35,6 +36,8 @@ namespace atmos
         uint32_t width = 0;
         uint32_t height = 0;
         uint32_t mipLevels = 1;
+        uint32_t arraySize = 1;  // 6 for cube maps
+        bool cube = false;
         DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
         TextureUsage usage = TextureUsage::ShaderResource;
         std::array<float, 4> clearColor{ 0.0f, 0.0f, 0.0f, 1.0f };
@@ -42,11 +45,13 @@ namespace atmos
         std::wstring debugName;
     };
 
-    // 2D GPU texture with the views its usage needs and its tracked resource state.
-    // Move-only; destruction goes through the device's DeferredReleaseQueue.
+    // 2D texture, texture array or cube map with the views its usage needs and a tracked
+    // resource state. SRVs cover every mip and slice; UAVs exist per mip, DSVs per slice.
     class Texture
     {
     public:
+        static constexpr uint32_t AllSubresources = UINT32_MAX;
+
         Texture() = default;
         Texture(GraphicsDevice& device, const TextureDesc& desc);
 
@@ -70,11 +75,11 @@ namespace atmos
 
         // Bindless indices into ResourceDescriptorHeap.
         uint32_t GetSrvIndex() const;
-        uint32_t GetUavIndex() const;
+        uint32_t GetUavIndex(uint32_t mip = 0) const;
 
         D3D12_CPU_DESCRIPTOR_HANDLE GetRtv() const;
-        // Read-only DSVs allow depth testing while the texture is in DEPTH_READ.
-        D3D12_CPU_DESCRIPTOR_HANDLE GetDsv(bool readOnly = false) const;
+        // `readOnly` allows depth testing while the texture is in DEPTH_READ (single-slice only).
+        D3D12_CPU_DESCRIPTOR_HANDLE GetDsv(uint32_t slice = 0, bool readOnly = false) const;
 
     private:
         friend class CommandContext;  // Sole owner of state transitions.
@@ -88,9 +93,9 @@ namespace atmos
         D3D12_RESOURCE_STATES state_ = D3D12_RESOURCE_STATE_COMMON;
 
         Descriptor srv_;
-        Descriptor uav_;
         Descriptor rtv_;
-        Descriptor dsv_;
         Descriptor readOnlyDsv_;
+        std::vector<Descriptor> uavs_;  // per mip
+        std::vector<Descriptor> dsvs_;  // per slice
     };
 }

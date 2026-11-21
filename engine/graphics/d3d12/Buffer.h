@@ -43,9 +43,8 @@ namespace atmos
         std::wstring debugName;
     };
 
-    // Linear GPU buffer with bindless views. Static buffers stay in COMMON and rely on
-    // D3D12 implicit promotion (copy dest, SRV, index buffer) and decay, so they need no
-    // explicit barriers. Destruction goes through the device's DeferredReleaseQueue.
+    // Linear buffer with bindless views. Static buffers stay in COMMON and rely on implicit promotion;
+    // UAV buffers are transitioned by CommandContext. Buffers decay to COMMON after every submit.
     class Buffer
     {
     public:
@@ -63,6 +62,7 @@ namespace atmos
         const BufferDesc& GetDesc() const { return desc_; }
         uint64_t GetSize() const { return desc_.size; }
         D3D12_GPU_VIRTUAL_ADDRESS GetGpuAddress() const { return resource_->GetGPUVirtualAddress(); }
+        D3D12_RESOURCE_STATES GetState() const { return state_; }
 
         uint32_t GetSrvIndex() const;
         uint32_t GetUavIndex() const;
@@ -71,6 +71,8 @@ namespace atmos
         std::byte* GetMappedData() const;
 
     private:
+        friend class CommandContext;  // Sole owner of state transitions.
+
         void CreateViews();
         void Release();
 
@@ -78,6 +80,7 @@ namespace atmos
         ComPtr<ID3D12Resource> resource_;
         BufferDesc desc_;
         std::byte* mappedData_ = nullptr;
+        D3D12_RESOURCE_STATES state_ = D3D12_RESOURCE_STATE_COMMON;
         Descriptor srv_;
         Descriptor uav_;
     };

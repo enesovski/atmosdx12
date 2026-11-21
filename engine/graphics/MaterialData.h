@@ -25,8 +25,7 @@ namespace atmos
         Count,
     };
 
-    // CPU description of a glTF metallic-roughness material. Texture paths are absolute;
-    // empty means the slot is unused.
+    // glTF metallic-roughness material. Texture paths are absolute; empty means unused.
     struct MaterialData
     {
         std::string name;

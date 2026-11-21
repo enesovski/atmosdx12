@@ -26,7 +26,11 @@ cmake --build build --config Debug
 
 - With no arguments it loads `scenes/sponza.json` (found from the working directory or above the exe).
 - `--scene file` loads a `.json` scene or a single `.gltf`/`.glb`.
-- In the app: F1 toggles the debug UI, F5 saves the scene (including the current camera) back to its `.json`.
+- **In the app:**
+  - Hold the right mouse button to fly, as in a Unity or Unreal viewport: mouse look, WASD/QE, Shift, and the
+    wheel for speed.
+  - F1 toggles the debug UI.
+  - F5 saves the scene, including the current camera, back to its `.json`.
 - `--dump-frame` logs the first frame's render graph (live and culled passes) and culling stats.
 - `--gpu-validation` turns on GPU-based validation.
 

@@ -63,6 +63,7 @@ namespace atmos
         : device_(&device), desc_(desc), state_(GetInitialState(desc.usage))
     {
         ATMOS_ASSERT(desc.width > 0 && desc.height > 0, "Texture size must be positive");
+        ATMOS_ASSERT(!desc.cube || desc.arraySize == 6, "Cube maps have six slices");
 
         D3D12_HEAP_PROPERTIES heapProperties{};
         heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -71,7 +72,7 @@ namespace atmos
         resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
         resourceDesc.Width = desc.width;
         resourceDesc.Height = desc.height;
-        resourceDesc.DepthOrArraySize = 1;
+        resourceDesc.DepthOrArraySize = static_cast<UINT16>(desc.arraySize);
         resourceDesc.MipLevels = static_cast<UINT16>(desc.mipLevels);
         resourceDesc.Format = GetResourceFormat(desc);
         resourceDesc.SampleDesc.Count = 1;
@@ -110,6 +111,7 @@ namespace atmos
         desc_.height = resourceDesc.Height;
         desc_.format = resourceDesc.Format;
         desc_.mipLevels = resourceDesc.MipLevels;
+        desc_.arraySize = resourceDesc.DepthOrArraySize;
         desc_.usage = usage;
         desc_.debugName = std::move(debugName);
         SetDebugName(resource_.Get(), desc_.debugName);
@@ -138,10 +140,10 @@ namespace atmos
             desc_ = std::move(other.desc_);
             state_ = other.state_;
             srv_ = std::exchange(other.srv_, {});
-            uav_ = std::exchange(other.uav_, {});
             rtv_ = std::exchange(other.rtv_, {});
-            dsv_ = std::exchange(other.dsv_, {});
             readOnlyDsv_ = std::exchange(other.readOnlyDsv_, {});
+            uavs_ = std::move(other.uavs_);
+            dsvs_ = std::move(other.dsvs_);
         }
 
         return *this;
@@ -153,10 +155,10 @@ namespace atmos
         return srv_.index;
     }
 
-    uint32_t Texture::GetUavIndex() const
+    uint32_t Texture::GetUavIndex(uint32_t mip) const
     {
-        ATMOS_ASSERT(uav_.IsValid(), "Texture has no UnorderedAccess usage");
-        return uav_.index;
+        ATMOS_ASSERT(mip < uavs_.size(), "Texture has no UnorderedAccess usage or no such mip");
+        return uavs_[mip].index;
     }
 
     D3D12_CPU_DESCRIPTOR_HANDLE Texture::GetRtv() const
@@ -165,23 +167,40 @@ namespace atmos
         return rtv_.cpu;
     }
 
-    D3D12_CPU_DESCRIPTOR_HANDLE Texture::GetDsv(bool readOnly) const
+    D3D12_CPU_DESCRIPTOR_HANDLE Texture::GetDsv(uint32_t slice, bool readOnly) const
     {
-        ATMOS_ASSERT(dsv_.IsValid(), "Texture has no DepthStencil usage");
-        return readOnly ? readOnlyDsv_.cpu : dsv_.cpu;
+        ATMOS_ASSERT(slice < dsvs_.size(), "Texture has no DepthStencil usage or no such slice");
+        ATMOS_ASSERT(!readOnly || readOnlyDsv_.IsValid(), "Read-only DSVs exist for single-slice textures only");
+        return readOnly ? readOnlyDsv_.cpu : dsvs_[slice].cpu;
     }
 
     void Texture::CreateViews()
     {
         ID3D12Device* device = device_->GetNativeDevice();
+        const bool isArray = desc_.arraySize > 1;
 
         if (HasUsage(desc_.usage, TextureUsage::ShaderResource))
         {
             D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc{};
             viewDesc.Format = GetShaderResourceFormat(desc_.format);
-            viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
             viewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-            viewDesc.Texture2D.MipLevels = desc_.mipLevels;
+
+            if (desc_.cube)
+            {
+                viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+                viewDesc.TextureCube.MipLevels = desc_.mipLevels;
+            }
+            else if (isArray)
+            {
+                viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+                viewDesc.Texture2DArray.MipLevels = desc_.mipLevels;
+                viewDesc.Texture2DArray.ArraySize = desc_.arraySize;
+            }
+            else
+            {
+                viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+                viewDesc.Texture2D.MipLevels = desc_.mipLevels;
+            }
 
             srv_ = device_->GetShaderResourceHeap().Allocate();
             device->CreateShaderResourceView(resource_.Get(), &viewDesc, srv_.cpu);
@@ -189,32 +208,63 @@ namespace atmos
 
         if (HasUsage(desc_.usage, TextureUsage::UnorderedAccess))
         {
-            D3D12_UNORDERED_ACCESS_VIEW_DESC viewDesc{};
-            viewDesc.Format = desc_.format;
-            viewDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+            for (uint32_t mip = 0; mip < desc_.mipLevels; ++mip)
+            {
+                D3D12_UNORDERED_ACCESS_VIEW_DESC viewDesc{};
+                viewDesc.Format = desc_.format;
 
-            uav_ = device_->GetShaderResourceHeap().Allocate();
-            device->CreateUnorderedAccessView(resource_.Get(), nullptr, &viewDesc, uav_.cpu);
+                if (isArray)
+                {
+                    viewDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+                    viewDesc.Texture2DArray.MipSlice = mip;
+                    viewDesc.Texture2DArray.ArraySize = desc_.arraySize;
+                }
+                else
+                {
+                    viewDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+                    viewDesc.Texture2D.MipSlice = mip;
+                }
+
+                Descriptor& uav = uavs_.emplace_back(device_->GetShaderResourceHeap().Allocate());
+                device->CreateUnorderedAccessView(resource_.Get(), nullptr, &viewDesc, uav.cpu);
+            }
         }
 
         if (HasUsage(desc_.usage, TextureUsage::RenderTarget))
         {
+            ATMOS_ASSERT(!isArray, "Render-target arrays are not supported");
             rtv_ = device_->GetRenderTargetHeap().Allocate();
             device->CreateRenderTargetView(resource_.Get(), nullptr, rtv_.cpu);
         }
 
         if (HasUsage(desc_.usage, TextureUsage::DepthStencil))
         {
-            D3D12_DEPTH_STENCIL_VIEW_DESC viewDesc{};
-            viewDesc.Format = desc_.format;
-            viewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+            for (uint32_t slice = 0; slice < desc_.arraySize; ++slice)
+            {
+                D3D12_DEPTH_STENCIL_VIEW_DESC viewDesc{};
+                viewDesc.Format = desc_.format;
 
-            dsv_ = device_->GetDepthStencilHeap().Allocate();
-            device->CreateDepthStencilView(resource_.Get(), &viewDesc, dsv_.cpu);
+                if (isArray)
+                {
+                    viewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
+                    viewDesc.Texture2DArray.FirstArraySlice = slice;
+                    viewDesc.Texture2DArray.ArraySize = 1;
+                }
+                else
+                {
+                    viewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+                }
 
-            viewDesc.Flags = D3D12_DSV_FLAG_READ_ONLY_DEPTH;
-            readOnlyDsv_ = device_->GetDepthStencilHeap().Allocate();
-            device->CreateDepthStencilView(resource_.Get(), &viewDesc, readOnlyDsv_.cpu);
+                Descriptor& dsv = dsvs_.emplace_back(device_->GetDepthStencilHeap().Allocate());
+                device->CreateDepthStencilView(resource_.Get(), &viewDesc, dsv.cpu);
+
+                if (!isArray)
+                {
+                    viewDesc.Flags = D3D12_DSV_FLAG_READ_ONLY_DEPTH;
+                    readOnlyDsv_ = device_->GetDepthStencilHeap().Allocate();
+                    device->CreateDepthStencilView(resource_.Get(), &viewDesc, readOnlyDsv_.cpu);
+                }
+            }
         }
     }
 
@@ -224,13 +274,20 @@ namespace atmos
         {
             DeferredReleaseQueue& queue = device_->GetReleaseQueue();
             queue.Release(device_->GetShaderResourceHeap(), srv_);
-            queue.Release(device_->GetShaderResourceHeap(), uav_);
             queue.Release(device_->GetRenderTargetHeap(), rtv_);
-            queue.Release(device_->GetDepthStencilHeap(), dsv_);
             queue.Release(device_->GetDepthStencilHeap(), readOnlyDsv_);
+
+            for (Descriptor& uav : uavs_)
+                queue.Release(device_->GetShaderResourceHeap(), uav);
+
+            for (Descriptor& dsv : dsvs_)
+                queue.Release(device_->GetDepthStencilHeap(), dsv);
+
             queue.Release(std::move(resource_));
         }
 
+        uavs_.clear();
+        dsvs_.clear();
         resource_.Reset();
         device_ = nullptr;
     }

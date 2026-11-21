@@ -5,8 +5,7 @@
 
 namespace atmos
 {
-    // Measures time between frames. Clamped so a breakpoint or a window drag
-    // does not produce one huge step.
+    // Seconds between frames, clamped so a breakpoint does not cause a huge step.
     class FrameTimer
     {
     public:

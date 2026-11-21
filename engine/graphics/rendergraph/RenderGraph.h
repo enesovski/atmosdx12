@@ -19,7 +19,7 @@ namespace atmos
         bool culled = false;
     };
 
-    // Handle to a texture inside one frame's graph. Cheap to copy and capture.
+    // Index of a texture in one frame's graph.
     struct RGTexture
     {
         static constexpr uint32_t InvalidIndex = UINT32_MAX;
@@ -28,7 +28,7 @@ namespace atmos
         bool IsValid() const { return index != InvalidIndex; }
     };
 
-    // What happens to a render target's previous contents when a pass binds it.
+    // What a pass does with a target's previous contents.
     enum class LoadOp
     {
         Load,      // Keep: the pass also depends on earlier writers.
@@ -36,7 +36,7 @@ namespace atmos
         DontCare,  // The pass overwrites every pixel.
     };
 
-    // Given to execute callbacks: the command context plus access to the real textures.
+    // Passed to execute callbacks.
     class RGContext
     {
     public:
@@ -69,11 +69,8 @@ namespace atmos
         size_t passIndex_;
     };
 
-    // Per-frame render graph (Frostbite FrameGraph / Unity RenderGraph style).
-    // Passes declare their reads and writes in a setup callback and record commands in an
-    // execute callback. Execute() culls passes whose results are unused, creates transient
-    // textures from the pool, inserts transitions, binds render targets, applies load ops and
-    // runs the surviving passes in declaration order.
+    // Per-frame graph: passes declare accesses in setup and record commands in execute.
+    // Execute() culls unused passes, allocates transients, then transitions and binds targets.
     class RenderGraph
     {
     public:
@@ -99,7 +96,7 @@ namespace atmos
 
         void Execute(CommandContext& commands);
 
-        // Logs passes (live or culled), their accesses and the transient textures.
+        // Logs passes, their accesses and textures.
         void LogSummary() const;
 
         // Valid after Execute().

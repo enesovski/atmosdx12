@@ -12,7 +12,7 @@ hold.
 | 0 | Foundation refactor | ✅ done |
 | 1 | Render graph v1 and first geometry | ✅ done ([plan and decisions](docs/phase-1-plan.md)) |
 | 2 | Scene, assets, and materials | ✅ done ([decisions](docs/phase-2-plan.md)) |
-| 3 | Lighting and shadows (deferred + clustered) | |
+| 3 | Lighting and shadows (deferred + clustered) | planned: [docs/phase-3-plan.md](docs/phase-3-plan.md) |
 | 4 | Physically based atmosphere and post-processing | |
 | 5 | GPU-driven rendering and performance | |
 | 6 | Content features and engine polish | |
@@ -147,65 +147,117 @@ textures, and the debug overlay shows per-pass stats.
 
 ## Phase 3: lighting and shadows
 
-- **Deferred GBuffer:** albedo, octahedral normal, roughness, metalness, AO, emissive, and motion vectors.
-- **BRDF:** Cook-Torrance GGX with energy-conserving diffuse.
-- **Lights:** directional (the sun, shared with the atmosphere), point, and spot.
-- **Clustered light culling** in compute (Olsson 2012), used by deferred lighting and forward transparents.
-- **Shadows:** cascaded shadow maps for the sun (stable cascades, PCF / PCSS-lite) and a shadow atlas for local
-  lights.
-- **IBL:** sky captured into a cubemap, prefiltered specular, irradiance SH, and a BRDF LUT.
-- **Transparents:** a forward pass, sorted back to front.
+Planned in detail, with each decision's alternatives: [docs/phase-3-plan.md](docs/phase-3-plan.md).
 
-**Done when:** Sponza is lit by the sun with cascaded shadows and 100+ point lights at interactive frame rates, and
-IBL matches the sky.
+**Steps:**
+
+1. **Engine prerequisites:**
+   - render-graph buffers, compute passes, texture arrays and cube maps
+   - multi-view `GpuScene` draw lists
+   - per-view data for shadow views
+2. **Light components:** directional, point and spot lights in the scene, JSON and UI; about 100 lights in Sponza.
+3. **GBuffer pass:** 3 targets plus emissive into scene color; replaces `OpaquePass`.
+4. **Clustered light culling:** 16×9×24 froxels, in compute.
+5. **Deferred lighting:** GGX lighting in compute.
+6. **Shadows:** cascaded shadow maps for the sun (4 × 2048², stable, PCF) and a shadow atlas for local lights.
+7. **IBL:** sky cube map, SH9 irradiance, prefiltered specular, and a BRDF LUT.
+8. **Transparent pass:** forward, sorted back to front.
+9. **Debug views:** GBuffer channels, cascades and the cluster heat map; a GPU frame timer.
+
+**Done when:** Sponza is lit by the sun with stable cascaded shadows and 100+ point and spot lights in under 8 ms at
+1080p (RTX 4060), IBL follows the sun, and transparents render sorted.
 
 ## Phase 4: atmosphere and post-processing
 
-- **Atmosphere (Hillaire 2020):**
-  - transmittance, multiple-scattering, and sky-view LUTs
-  - an aerial-perspective froxel volume
-  - sun color from transmittance
-- **Volumetric fog:** froxel-based (Wronski 2014 / Hillaire 2015), temporally reprojected.
-- **Volumetric clouds:** raymarched (Nubis-style), temporal reprojection at reduced resolution, and cloud shadows.
-- **Post-processing:**
-  - histogram auto exposure
-  - bloom
-  - TAA
-  - depth of field
-  - motion blur
-  - color grading LUT
-  - ACES / AgX tonemapping
-- **Screen-space effects:** GTAO (Jimenez 2016) and SSR with an IBL fallback.
+The project's namesake: a physically based sky that drives all outdoor lighting.
 
-**Done when:** a sun sweep from -10° to 90° looks plausible from sunrise to twilight, with fog, clouds, and stable
-TAA.
+**Steps:**
+
+1. **Atmosphere** (Hillaire 2020):
+   - transmittance, multiple-scattering and sky-view LUTs
+   - an aerial-perspective froxel volume applied to opaque and transparent geometry
+   - sun and ambient color taken from transmittance
+   - IBL capture switches to the physical sky
+2. **Motion vectors:** camera reprojection from depth, plus a velocity pass for moving objects (previous transforms
+   in `GpuScene`).
+3. **TAA:**
+   - Halton jitter in the projection
+   - history buffer imported into the graph
+   - YCoCg neighborhood clipping
+   - velocity-weighted feedback
+4. **Volumetric fog:** froxels (Wronski 2014 / Hillaire 2015), lit by the sun shadow map and the clustered lights,
+   temporally reprojected.
+5. **Volumetric clouds:**
+   - raymarched (Nubis-style) at quarter resolution with temporal reconstruction
+   - weather map
+   - cloud shadows projected onto the scene
+6. **Post chain:**
+   - histogram auto exposure
+   - physically based bloom (downsample/upsample chain)
+   - depth of field
+   - motion blur
+   - color grading LUT
+   - ACES / AgX tonemapping (replacing `1 - exp(-x)`)
+7. **Screen-space effects:** GTAO (Jimenez 2016) and hierarchical SSR with an IBL fallback.
+
+**Done when:** a sun sweep from -10° to 90° looks plausible from sunrise to twilight, with aerial perspective, fog
+shafts, clouds, and stable TAA during camera motion.
 
 ## Phase 5: GPU-driven rendering and performance
 
-- Render graph v2: aliasing, async compute, and split or enhanced barriers.
-- A persistent GPU scene buffer (Unreal GPUScene-style) and GPU culling (frustum + two-phase HZB occlusion) with
-  `ExecuteIndirect`.
-- A unified geometry buffer, instancing, LODs, and optionally meshlets with mesh shaders. Revisit a visibility
-  buffer here.
-- A per-pass GPU timestamp profiler, plus Tracy/PIX CPU profiling.
-- Multithreaded command recording through a job system.
-- Shader hot reload.
+**Steps:**
 
-**Done when:** 100k+ instances run GPU-culled, per-pass timings are visible, and async compute overlaps lighting.
+1. **Profiling first:** per-pass GPU timestamps in the render graph, shown in the overlay; Tracy for CPU zones.
+2. **Render graph v2:**
+   - transient memory aliasing with placed resources
+   - an async compute queue (lighting/fog overlap with shadows)
+   - split or enhanced barriers
+3. **Persistent GPU scene:**
+   - instance and material data resident on the GPU, updated by deltas (Unreal GPUScene)
+   - a unified geometry buffer for all meshes
+4. **GPU culling:**
+   - per-instance frustum culling
+   - two-phase HZB occlusion culling
+   - `ExecuteIndirect` draws for every view (camera, cascades, atlas tiles)
+5. **Geometry scaling:** mesh LODs (meshoptimizer), meshlets with mesh shaders, and a visibility-buffer evaluation.
+6. **Parallel CPU:**
+   - a job system in `core/`
+   - parallel command-list recording per graph pass
+   - parallel `GpuScene` updates
+7. **Shader hot reload:** file watcher → recompile → swap only the affected PSOs.
+
+**Done when:** 100k+ instances are GPU-culled at interactive rates, per-pass GPU timings are visible, async compute
+overlaps lighting, and transient memory drops measurably with aliasing.
 
 ## Phase 6: content features and engine polish
 
-- Skinned meshes and GPU skinning.
-- GPU particles.
-- Deferred decals.
-- Terrain.
-- HDR display output.
-- An on-disk PSO cache and offline shader builds.
-- ImGui editor tooling: hierarchy, inspector, gizmos, and a render-graph viewer.
+**Steps:**
+
+1. **Animation:** glTF skins and animations, GPU skinning in compute, and motion vectors for skinned meshes.
+2. **GPU particles:** compute emit/simulate/compact, sorted transparent rendering, and lighting from clusters.
+3. **Deferred decals:** box projection into the GBuffer.
+4. **Terrain:** heightmap clipmaps with a material blend, suited to the outdoor atmosphere focus.
+5. **Display output:** HDR10 / scRGB swap chain with a matching tonemap path.
+6. **Asset pipeline maturity:**
+   - BC7 through a GPU compressor
+   - `.glb` and embedded images
+   - MikkTSpace tangents
+   - an on-disk PSO cache and offline shader compilation for Release
+7. **Editor tooling (ImGui):**
+   - scene hierarchy
+   - inspector for components
+   - transform gizmos (ImGuizmo)
+   - asset browser
+   - render-graph viewer
+   - undo/redo of scene edits
+
+**Done when:** an animated character walks across a terrain under the dynamic sky, scenes can be edited and saved
+entirely in the app, and a Release build starts with no shader compilation.
 
 ## Phase 7 (optional): advanced features
 
-- DXR shadows, reflections, and AO.
-- DDGI-style dynamic diffuse GI.
-- Virtual textures and shadow maps.
-- FSR / DLSS upscaling.
+- **Ray tracing (DXR 1.1):** inline ray-query shadows, reflections and AO with a denoiser, built on the GPU scene's
+  acceleration structures.
+- **Global illumination:** dynamic diffuse GI with probes (DDGI-style) or screen-space GI as a fallback.
+- **Virtual textures and virtual shadow maps:** once GPU-driven rendering is in place.
+- **Upscaling:** FSR / DLSS / XeSS on top of TAA.

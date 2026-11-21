@@ -11,9 +11,8 @@ namespace atmos
 {
     class GraphicsDevice;
 
-    // Dear ImGui with the Win32 and D3D12 backends, drawn as the renderer's overlay.
-    // Per frame: BeginFrame(), build windows with the ImGui API, EndFrame(), then pass this to
-    // Renderer::Render. The GPU must be idle before destruction (Renderer::WaitIdle).
+    // Dear ImGui (Win32 + D3D12 backends) drawn as the renderer's overlay.
+    // The GPU must be idle before destruction.
     class DebugUi final : public IOverlayRenderer
     {
     public:
@@ -23,7 +22,7 @@ namespace atmos
         DebugUi(const DebugUi&) = delete;
         DebugUi& operator=(const DebugUi&) = delete;
 
-        // Forward window messages; returns true if ImGui consumed the message.
+        // Returns true if ImGui consumed the message.
         bool HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
         void BeginFrame();

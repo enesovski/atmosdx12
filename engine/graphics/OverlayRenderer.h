@@ -4,9 +4,7 @@ namespace atmos
 {
     class CommandContext;
 
-    // Something drawn on top of the final image (e.g. the debug UI). The renderer records it
-    // in the last graph pass with the back buffer bound; implementations may change any
-    // pipeline state, because nothing renders after them.
+    // Drawn last, on the back buffer; may change any pipeline state.
     class IOverlayRenderer
     {
     public:

@@ -14,9 +14,7 @@ namespace atmos
     class DeferredReleaseQueue;
     class GraphicsDevice;
 
-    // Rotates FramesInFlight frame slots. Each slot owns a command allocator and the fence
-    // value that guards it; anything else indexed by the slot (e.g. upload memory) shares
-    // that guarantee. It also drives the device's DeferredReleaseQueue with the same fence.
+    // Rotates frame slots; each slot's fence guards its allocator and per-frame memory.
     class FrameScheduler
     {
     public:
@@ -25,13 +23,12 @@ namespace atmos
         FrameScheduler(const FrameScheduler&) = delete;
         FrameScheduler& operator=(const FrameScheduler&) = delete;
 
-        // Waits until the GPU finished this slot's previous frame, then opens the command list.
+        // Waits for the slot's previous frame, then opens the command list.
         uint32_t BeginFrame();
         ID3D12GraphicsCommandList* GetCommandList() const { return commandList_.Get(); }
         void Submit();
         void EndFrame();
 
-        // Blocks until the GPU has finished all submitted work.
         void Flush();
 
     private:

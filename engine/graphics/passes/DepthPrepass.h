@@ -11,9 +11,7 @@ namespace atmos
     class GraphicsDevice;
     class ShaderCompiler;
 
-    // Writes scene depth for all visible meshes. Opaque buckets use a position-only pipeline
-    // with no pixel shader; masked buckets alpha-test against the base color texture.
-    // Later passes test against this depth so every pixel is shaded once.
+    // Writes depth for visible meshes; masked buckets alpha-test against base color.
     class DepthPrepass
     {
     public:

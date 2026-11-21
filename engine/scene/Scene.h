@@ -16,8 +16,7 @@ namespace atmos
     using EntityId = uint32_t;
     inline constexpr EntityId InvalidEntity = UINT32_MAX;
 
-    // Local transform relative to the parent entity. Rotation is Euler angles in degrees,
-    // applied as roll (Z), pitch (X), then yaw (Y).
+    // Relative to the parent. Euler degrees, applied roll (Z), pitch (X), yaw (Y).
     struct Transform
     {
         DirectX::XMFLOAT3 position{ 0.0f, 0.0f, 0.0f };
@@ -27,7 +26,7 @@ namespace atmos
         DirectX::XMMATRIX ToMatrix() const;
     };
 
-    // Places a model asset. `handle` is filled in at runtime by the asset manager.
+    // `handle` is assigned at runtime by the asset manager.
     struct ModelComponent
     {
         std::filesystem::path path;  // absolute at runtime; relative to the scene file on disk
@@ -59,8 +58,7 @@ namespace atmos
         float fovDegrees = 65.0f;
     };
 
-    // The gameplay-side world: entities with a transform hierarchy and components.
-    // Graphics-free; the runtime turns it into a RenderScene every frame.
+    // Graphics-free world description; converted to a RenderScene every frame.
     class Scene
     {
     public:
@@ -72,7 +70,7 @@ namespace atmos
         std::span<Entity> GetEntities() { return entities_; }
         std::span<const Entity> GetEntities() const { return entities_; }
 
-        // World matrices for every entity, indexed by EntityId (parents resolve first).
+        // Indexed by EntityId.
         std::vector<DirectX::XMFLOAT4X4> ComputeWorldMatrices() const;
 
         SceneEnvironment environment;

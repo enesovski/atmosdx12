@@ -24,6 +24,7 @@ namespace atmos
         uint32_t height = 0;
     };
 
+    // Win32 window that translates OS messages into Input state.
     class Window
     {
     public:
@@ -41,8 +42,10 @@ namespace atmos
         bool ProcessMessages(int& exitCode);
         void Show();
 
-        // Returns the new client size once per resize.
         std::optional<WindowSize> ConsumeResize();
+
+        // Hides the cursor and pins it in place (mouse motion still arrives as raw input).
+        void SetCursorLocked(bool locked);
 
         // Sees every message first (e.g. a UI layer); returning true marks it handled.
         using MessageHandler = std::function<bool(HWND, UINT, WPARAM, LPARAM)>;
@@ -51,12 +54,15 @@ namespace atmos
     private:
         static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
         LRESULT HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+        void HandleRawInput(LPARAM lParam);
 
         HINSTANCE instance_;
         HWND window_ = nullptr;
         Input& input_;
         WindowSize clientSize_;
         bool resizePending_ = false;
+        bool cursorLocked_ = false;
+        POINT lockedCursorPosition_{};
         MessageHandler messageHandler_;
     };
 }
